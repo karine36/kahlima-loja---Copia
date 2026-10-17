@@ -1,0 +1,28 @@
+insert into public.products (id, name, price, active) values
+  ('AU-101', 'Power Bank Portátil 20.000mAh', 119.99, true),
+  ('AU-208', 'Kit de Costura Portátil Completo', 49.90, true),
+  ('AU-315', 'Acendedor Elétrico Recarregável', 24.90, true),
+  ('AU-427', 'Kit com 48 Canetas de Ponta Dupla', 59.90, true),
+  ('KL-501', 'Turbina Portátil para Lavagem', 89.90, true),
+  ('KL-502', 'Extensão Filtro de Linha Coibeu', 34.90, true),
+  ('KL-503', 'Kit de Bolso com 24 Ferramentas', 39.90, true),
+  ('KL-504', 'Fita LED 2835 3000K 12V', 49.90, true),
+  ('KL-505', 'Papa-Bolinhas Elétrico Recarregável', 29.90, true),
+  ('KL-507', 'Sensor de Presença', 29.90, true),
+  ('KL-508', 'Luminária LED para Escrita', 34.90, true),
+  ('KL-509', 'Kit com 6 Navalhas para Barbear', 19.90, true),
+  ('KL-510', 'Kit de Manicure com 16 Peças', 24.90, true),
+  ('KL-511', 'Mouse Bluetooth', 49.90, true),
+  ('KL-512', 'Kit com 500 Unhas Postiças Stiletto', 24.90, true),
+  ('KL-506', 'Kit com 115 Ferramentas', 69.90, true),
+  ('KL-513', 'Mixer Elétrico Recarregável', 39.90, true),
+  ('KL-514', 'Raspador de Língua', 12.90, true),
+  ('KL-515', 'Pincel para Sobrancelha Castanho Claro', 14.90, true),
+  ('KL-516', 'Escova Dental Elétrica com 4 Refis', 59.90, true),
+  ('KL-517', 'Aspirador de Pó Portátil Recarregável', 69.90, true),
+  ('KL-518', 'Torneira Prata com Detalhes Pretos', 79.90, true),
+  ('KL-519', 'Lanterna Elétrica Recarregável', 29.90, true)
+on conflict (id) do update
+set name = excluded.name,
+    price = excluded.price,
+    active = excluded.active;

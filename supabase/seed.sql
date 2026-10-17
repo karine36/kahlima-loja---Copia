@@ -1,0 +1,2 @@
+-- Local development seed data goes here.
+-- Keep schema changes in timestamped files under migrations/.

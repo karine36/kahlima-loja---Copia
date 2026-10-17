@@ -1,0 +1,48 @@
+@media (max-width: 900px) {
+  .shop-layout { grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; }
+  .checkout-layout { grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; }
+  .checkout-main, .checkout-summary { padding: 20px; }
+  .auth-form-side { padding: 48px 38px; }
+}
+@media (max-width: 700px) {
+  .auth-page { padding: 18px; }
+  .auth-card { min-height: unset; grid-template-columns: 1fr; border-radius: 22px; }
+  .auth-story { display: none; }
+  .auth-form-side { min-height: 590px; padding: 32px 26px; }
+  .brand-mobile { display: inline-flex; margin-bottom: 38px; }
+  .store-header { padding: 10px 16px; }
+  .store-nav { gap: 12px; }
+  .profile-menu > span:last-child { display: none; }
+  .store-main { padding: 22px 16px 42px; }
+  .store-welcome { min-height: 150px; padding: 25px 23px; }
+  .store-welcome h1 { font-size: 32px; }
+  .shop-layout { grid-template-columns: 1fr; gap: 23px; margin-top: 26px; }
+  .cart-panel { position: static; max-height: none; overflow: visible; }
+  .checkout { margin-top: 24px; }
+  .checkout-layout { grid-template-columns: 1fr; }
+  .checkout-summary { position: static; }
+  .checkout-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 14px; }
+}
+@media (max-width: 520px) {
+  .catalog-heading { align-items: stretch; flex-direction: column; }
+  .search-field { width: 100%; }
+  .product-grid { grid-template-columns: 1fr; }
+  .product-art { height: 165px; }
+  .brand { font-size: 15px; }
+  .store-nav { gap: 8px; }
+  .button-logout { padding: 0 10px; }
+  .profile-fields { grid-template-columns: 1fr; }
+  .profile-dialog { padding: 21px; }
+  .checkout-heading { align-items: flex-start; flex-direction: column; }
+  .checkout-heading h1 { font-size: 25px; }
+  .checkout-main, .checkout-summary { padding: 17px; }
+  .checkout-form { grid-template-columns: 1fr; }
+  .checkout-field-wide { grid-column: auto; }
+  .checkout-actions { align-items: stretch; flex-direction: column-reverse; }
+  .checkout-actions .button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+
