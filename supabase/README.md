@@ -51,31 +51,29 @@ chaves `service_role` nesse arquivo.
 1. No painel do Mercado Pago, crie uma aplicação e obtenha primeiro as credenciais de
    **teste**. Configure o webhook para o evento de pagamentos e copie o segredo de
    assinatura exibido pelo Mercado Pago.
-2. Aplique as migrations pendentes no projeto vinculado:
+2. A tabela `public.products` está sincronizada com o catálogo atual do site por meio
+   da migration `20261017180000_sync_current_product_catalog.sql`. Ao alterar produtos
+   ou preços, crie uma migration de sincronização com os mesmos IDs e valores antes de
+   aceitar novas compras.
+
+3. Cadastre os segredos no Supabase. No PowerShell, na pasta raiz do projeto, rode:
 
    ```sh
-   supabase db push
+   .\supabase\set-mercadopago-secrets.ps1
    ```
 
-   A migration `20261006010000_add_orders_and_pix.sql` cria o catálogo de preços
-   validado pelo servidor, pedidos e itens, políticas RLS e a função que registra os
-   itens somente após a confirmação. Os preços iniciais do catálogo precisam acompanhar
-   os preços de `js/products.js`; mantenha ambos sincronizados ao alterar o catálogo.
-3. Cadastre os segredos no Supabase, sem aspas ao redor dos valores:
-
-   ```sh
-   supabase secrets set MERCADO_PAGO_ACCESS_TOKEN=SEU_ACCESS_TOKEN
-   supabase secrets set MERCADO_PAGO_WEBHOOK_SECRET=SEU_SEGREDO_DO_WEBHOOK
-   ```
-
-   O Supabase fornece `SUPABASE_URL`, `SUPABASE_ANON_KEY` e
-   `SUPABASE_SERVICE_ROLE_KEY` às Edge Functions. Não publique nem compartilhe a chave
-   `service_role` ou os tokens do Mercado Pago.
+   O script solicita os valores sem exibi-los e remove o arquivo temporário após o
+   envio. Use o Access Token de teste e a assinatura do webhook já configurado. Os dois
+   valores precisam ser diferentes: o Access Token é da aplicação do Mercado Pago, e a
+   assinatura do webhook é outra credencial. O script remove espaços no começo e no fim
+   dos valores; não cole quebras de linha junto com as credenciais. Nunca inclua essas
+   credenciais no frontend, em arquivos commitados ou em mensagens. O Supabase fornece `SUPABASE_URL`,
+   `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` às Edge Functions.
 4. Publique as funções:
 
    ```sh
-   supabase functions deploy create-pix-payment
-   supabase functions deploy mercadopago-webhook --no-verify-jwt
+   npx --yes supabase functions deploy create-pix-payment
+   npx --yes supabase functions deploy mercadopago-webhook --no-verify-jwt
    ```
 
    A primeira função exige uma sessão Supabase válida e cria uma cobrança PIX com valor
@@ -94,7 +92,7 @@ status do Pix automaticamente e mostra os produtos pagos na seção **Pedidos**.
 
 ## Retomada da configuração da loja
 
-Estado registrado em 06/10/2026:
+Estado registrado em 17/10/2026:
 
 - Supabase CLI autenticado via `npx` e projeto `mogljohafdvxeeazhwwh` vinculado.
 - As migrations de perfil já existiam no banco, então foram conferidas e marcadas como
@@ -105,24 +103,86 @@ Estado registrado em 06/10/2026:
   teste configurado é `https://mogljohafdvxeeazhwwh.supabase.co/functions/v1/mercadopago-webhook`.
   A assinatura secreta e o Access Token de teste estão com a responsável; nunca registrar
   seus valores neste repositório, no frontend ou em mensagens.
-- O catálogo local agora contém 23 produtos com IDs únicos. As sugestões de preço
-  preenchidas para os produtos novos são provisórias e ainda precisam ser comparadas
-  com custo, embalagem, frete e margem antes de ativar vendas.
-- Duas migrations de catálogo foram criadas depois da última sincronização:
-  `20261006231700_update_sewing_kit_price.sql` e
-  `20261006233000_sync_product_catalog.sql`. Elas atualizam o preço do kit de costura
-  e sincronizam nomes/preços/IDs em `public.products`; aplique-as com `supabase db push`
-  somente depois de aprovar os preços.
-- Ainda pendente: cadastrar `MERCADO_PAGO_ACCESS_TOKEN` e
-  `MERCADO_PAGO_WEBHOOK_SECRET` como secrets no Supabase; publicar as duas Edge
-  Functions; testar uma compra PIX completa e confirmar o registro do pagamento e
-  dos produtos em `orders`/`order_items`.
+- A migration `20261017180000_sync_current_product_catalog.sql` foi aplicada ao banco
+  remoto. Foram conferidos 27 produtos ativos com IDs, nomes e preços iguais aos do
+  catálogo local. O SKU antigo `KL-508` está inativo; não foi excluído, para preservar
+  referências históricas de pedidos.
+- Os secrets `MERCADO_PAGO_ACCESS_TOKEN` e `MERCADO_PAGO_WEBHOOK_SECRET` foram
+  cadastrados no Supabase com o script `set-mercadopago-secrets.ps1`; não consultar,
+  registrar ou compartilhar seus valores.
+- As Edge Functions `create-pix-payment` (JWT obrigatório) e `mercadopago-webhook`
+  (JWT desligado para receber notificações assinadas) estão publicadas e ativas.
+  Uma chamada de smoke test sem assinatura retornou HTTP 401 como esperado.
+- Ainda pendente: fazer uma compra de teste completa, confirmar a aprovação PIX e
+  verificar que os itens aparecem em `orders`/`order_items`.
 - Antes da publicação para clientes: revisar que frete e estoque ainda não são
   calculados/reservados no servidor; confirmar SMTP e URL de recuperação de senha;
   configurar credenciais e webhook de produção após os testes.
 
-Ao retomar, confira primeiro os preços finais em `js/products.js` e compare cada ID e
-preço com `public.products`. Não reutilize IDs: eles também são referências dos itens
-de pedidos já gravados. Só depois de aprovar e sincronizar o catálogo, continue com os
-secrets e o deploy descritos na seção Mercado Pago acima. Não rode `db reset`: o
-histórico remoto já registra as três migrations iniciais como aplicadas.
+## Pix com conferência manual
+
+Enquanto as credenciais do Mercado Pago não estiverem aceitando pagamentos, o checkout
+pode usar uma chave Pix da loja diretamente. Isso não cria uma cobrança no Mercado Pago
+nem confirma o pagamento automaticamente.
+
+1. Aplique a migration que habilita o provedor manual:
+
+   ```sh
+   npx --yes supabase db push
+   ```
+
+2. Na raiz do projeto, cadastre a chave Pix da loja. A chave é solicitada como entrada
+   oculta e não deve ser enviada em mensagens:
+
+   ```powershell
+   .\supabase\set-manual-pix-secrets.ps1
+   ```
+
+   O nome e a cidade são exibidos dentro do QR Pix; confirme-os antes de aceitar pedidos.
+   A chave fica guardada como secret no Supabase, não no código do site.
+3. Publique a função atualizada:
+
+   ```sh
+   npx --yes supabase functions deploy create-pix-payment
+   ```
+
+O QR contém o valor exato do pedido e um identificador. A cliente pode tocar em **Já
+paguei**, o que apenas sinaliza a conferência; isso não altera o status para pago. A
+responsável da loja confere o crédito no aplicativo do banco (não aceite apenas
+comprovante) e confirma o pedido no painel administrativo. A confirmação insere os
+produtos em `order_items`.
+
+Para liberar o painel para a conta proprietária já cadastrada no Supabase Auth, aplique
+a migration e execute uma vez no SQL Editor, substituindo o endereço pelo e-mail da
+conta proprietária:
+
+```sql
+insert into public.store_admins (user_id)
+select id
+from auth.users
+where email = 'EMAIL_DA_CONTA_PROPRIETARIA'
+on conflict (user_id) do nothing;
+```
+
+Para os novos objetos do painel, aplique a migration:
+
+```sh
+npx --yes supabase db push
+```
+
+Depois entre novamente na loja. A opção **Conferir pagamentos** mostra os pedidos Pix,
+contato, endereço/estação, produtos e quantidades. A função de confirmação valida a
+permissão de administradora no banco; clientes não podem acessar dados de outros pedidos
+nem confirmar pagamentos.
+
+Na área administrativa, pedidos pendentes ou pagos podem ser cancelados com uma mensagem
+personalizada de até 500 caracteres. O cliente verá o aviso em **Notificações** e no
+resumo do pedido. Para pedidos já pagos, o total fica registrado como valor a devolver;
+essa marcação não transfere dinheiro. A devolução deve ser realizada manualmente pelo
+banco e conferida pela loja. Pedidos cancelados antes da confirmação do pagamento não
+recebem um valor de devolução registrado.
+
+Ao retomar, o catálogo, os secrets e as funções já estão no Supabase remoto. Faça
+login na loja, gere um Pix de teste, conclua o pagamento pela conta compradora de teste
+do Mercado Pago e confirme o pedido e os produtos nas tabelas `orders` e `order_items`.
+Não rode `db reset`: as migrations e o catálogo já foram aplicados no projeto remoto.

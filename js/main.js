@@ -70,10 +70,16 @@ const state = {
   error: '',
   notice: '',
   view: 'home',
+  contentRefresh: false,
   selectedCategory: null,
   sidebarCollapsed: true,
   sidebarOpen: false,
   orders: [],
+  adminOrders: [],
+  isStoreAdmin: false,
+  adminOrdersLoading: false,
+  adminOrderError: '',
+  cancellationNotificationCount: 0,
   selectedOrder: null,
   theme: localStorage.getItem('kahLimaTheme') || 'light',
   profileOpen: false,
@@ -401,37 +407,109 @@ function setAuthenticatedUser(user) {
   state.authPending = false;
   state.authInitializing = false;
   void loadCustomerOrders();
+  void loadStoreAdminAccess(user.id);
   if (window.location.hash === storePath) renderStore();
   else goTo(storePath);
+}
+
+async function loadStoreAdminAccess(userId) {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase) return;
+  const { data, error } = await supabase.rpc('is_store_admin');
+  if (error) {
+    console.error('Could not determine store admin access.', error);
+    return;
+  }
+  if (state.userId !== userId) return;
+  state.isStoreAdmin = data === true;
+  if (!state.isStoreAdmin && state.view === 'admin-orders') state.view = 'home';
+  renderStore();
 }
 
 async function loadCustomerOrders() {
   const supabase = window.KahLimaSupabase?.client;
   if (!supabase || !state.userId) return;
+  const userId = state.userId;
   state.ordersLoading = true;
   const { data, error } = await supabase
     .from('orders')
-    .select('id,status,total,item_count,created_at,order_items(product_id,product_name,unit_price,quantity,color,product_type)')
-    .eq('user_id', state.userId)
+    .select('id,status,total,item_count,created_at,payment_provider,customer_reported_paid_at,cancellation_message,cancelled_at,refund_amount,items_snapshot,order_items(product_id,product_name,unit_price,quantity,color,product_type)')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false });
   state.ordersLoading = false;
+  if (state.userId !== userId) return;
   if (error) {
     console.error('Could not load customer orders from Supabase.', error);
     state.notice = 'Não foi possível carregar seus pedidos. Atualize a página para tentar novamente.';
-    if (state.view === 'orders') renderStore();
+    renderStore();
     return;
   }
-  state.orders = (data || []).map((row) => ({
-    id: row.id,
+  state.orders = (data || []).map((row) => {
+    const itemRows = row.order_items?.length ? row.order_items : row.items_snapshot || [];
+    return {
+      id: row.id,
+      number: row.id.slice(0, 8).toUpperCase(),
+      status: row.status === 'paid'
+        ? 'Pago'
+        : row.status === 'cancelled'
+          ? 'Compra cancelada'
+        : row.status === 'failed'
+          ? 'Pagamento não concluído'
+          : row.customer_reported_paid_at
+            ? 'Pagamento informado · aguardando conferência'
+            : 'Aguardando Pix',
+      createdAt: row.created_at,
+      total: Number(row.total),
+      itemCount: row.item_count,
+      paymentProvider: row.payment_provider,
+      customerReportedPaidAt: row.customer_reported_paid_at,
+      cancellationMessage: row.cancellation_message,
+      cancelledAt: row.cancelled_at,
+      refundAmount: row.refund_amount === null ? null : Number(row.refund_amount),
+      items: itemRows.map((item) => ({
+        quantity: item.quantity,
+        color: item.color,
+        type: item.product_type || item.type || '',
+        product: {
+          ...(products.find((product) => product.id === (item.product_id || item.id)) || {}),
+          id: item.product_id || item.id,
+          name: item.product_name || item.name,
+          price: Number(item.unit_price ?? item.price),
+        },
+      })),
+    };
+  });
+  state.cancellationNotificationCount = state.orders.filter((order) => order.status === 'Compra cancelada').length;
+  if (state.view === 'orders' || state.view === 'notifications') {
+    state.contentRefresh = true;
+    renderStore();
+  }
+}
+
+async function loadAdminOrders() {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase || !state.isStoreAdmin) return;
+  state.adminOrdersLoading = true;
+  state.adminOrderError = '';
+  renderStore();
+  const { data, error } = await supabase
+    .from('orders')
+    .select('id,status,total,item_count,created_at,customer_name,customer_phone,delivery,items_snapshot,customer_reported_paid_at,payment_provider,cancellation_message,cancelled_at,refund_amount')
+    .eq('payment_provider', 'manual_pix')
+    .order('created_at', { ascending: false });
+  state.adminOrdersLoading = false;
+  if (error) {
+    console.error('Could not load store orders for review.', error);
+    state.adminOrderError = 'Não foi possível carregar os pedidos. Atualize e tente novamente.';
+    renderStore();
+    return;
+  }
+  state.adminOrders = (data || []).map((row) => ({
+    ...row,
     number: row.id.slice(0, 8).toUpperCase(),
-    status: row.status === 'paid' ? 'Pago' : row.status === 'failed' ? 'Pagamento não concluído' : 'Aguardando Pix',
-    createdAt: row.created_at,
-    total: Number(row.total),
-    itemCount: row.item_count,
-    items: (row.order_items || []).map((item) => ({
-      quantity: item.quantity,
-      color: item.color,
-      type: item.product_type,
+    items: (row.items_snapshot || []).map((item) => ({
+      ...item,
+      type: item.product_type || '',
       product: {
         ...(products.find((product) => product.id === item.product_id) || {}),
         id: item.product_id,
@@ -440,7 +518,53 @@ async function loadCustomerOrders() {
       },
     })),
   }));
-  if (state.view === 'orders') renderStore();
+  state.contentRefresh = true;
+  renderStore();
+}
+
+async function confirmManualPixOrder(orderId) {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase || !state.isStoreAdmin) return;
+  const { error } = await supabase.rpc('confirm_manual_pix_payment', { p_order_id: orderId });
+  if (error) {
+    console.error('Could not confirm manual Pix order.', error);
+    state.adminOrderError = 'Não foi possível confirmar o pedido. Confira o acesso de administradora e tente novamente.';
+    renderStore();
+    return;
+  }
+  await loadAdminOrders();
+}
+
+async function cancelManualPixOrder(orderId, message) {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase || !state.isStoreAdmin) return;
+  const { error } = await supabase.rpc('cancel_manual_pix_order', {
+    p_order_id: orderId,
+    p_message: message,
+  });
+  if (error) {
+    console.error('Could not cancel manual Pix order.', error);
+    state.adminOrderError = 'Não foi possível cancelar o pedido. Atualize e tente novamente.';
+    renderStore();
+    return;
+  }
+  await loadAdminOrders();
+}
+
+async function reportManualPixPaid(orderId) {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase) return;
+  const { error } = await supabase.rpc('report_manual_pix_paid', { p_order_id: orderId });
+  if (error) {
+    console.error('Could not report manual Pix payment.', error);
+    state.checkoutError = 'Não foi possível avisar a loja. Tente novamente.';
+    renderStore();
+    return;
+  }
+  state.order.customerReportedPaidAt = new Date().toISOString();
+  state.checkoutError = '';
+  await loadCustomerOrders();
+  renderStore();
 }
 
 async function createPixPayment() {
@@ -461,8 +585,9 @@ async function createPixPayment() {
       },
     });
     if (error || data?.error || !data?.orderId || !data?.qrCode) {
-      if (error) console.error('Mercado Pago PIX request failed.', error);
-      state.checkoutError = data?.error || 'Não foi possível gerar o Pix. Confira sua conexão e tente novamente.';
+      if (error) console.error('PIX request failed.', error);
+      state.checkoutError = data?.error
+        || (error ? await getPixRequestErrorMessage(error) : 'O servidor não retornou os dados do Pix. Tente novamente.');
       state.paymentPending = false;
       state.checkoutStep = 2;
       renderStore();
@@ -477,20 +602,53 @@ async function createPixPayment() {
       qrCode: data.qrCode,
       qrCodeBase64: data.qrCodeBase64,
       ticketUrl: data.ticketUrl,
+      paymentProvider: data.paymentProvider || 'mercadopago',
       status: 'pending',
       total: Number(data.total),
     };
     state.paymentPending = false;
     state.checkoutError = '';
     renderStore();
+    if (state.order.paymentProvider === 'manual_pix') {
+      const qrContainer = app.querySelector('#manual-pix-qr');
+      if (typeof window.QRCode !== 'function' || !qrContainer) {
+        state.checkoutError = 'O código Pix foi criado, mas não foi possível montar a imagem do QR Code. Copie o código Pix abaixo para pagar.';
+        renderStore();
+      } else {
+        new window.QRCode(qrContainer, {
+          text: state.order.qrCode,
+          width: 240,
+          height: 240,
+          colorDark: '#102018',
+          colorLight: '#ffffff',
+          correctLevel: window.QRCode.CorrectLevel.M,
+        });
+      }
+    }
     startPaymentStatusPolling();
   } catch (error) {
     console.error('Could not request PIX payment.', error);
-    state.checkoutError = 'Não foi possível conectar ao Mercado Pago. Tente novamente.';
+    state.checkoutError = 'Não foi possível gerar o código Pix. Tente novamente.';
     state.paymentPending = false;
     state.checkoutStep = 2;
     renderStore();
   }
+}
+
+async function getPixRequestErrorMessage(error) {
+  const response = error?.context;
+  if (response && typeof response.clone === 'function') {
+    try {
+      const body = await response.clone().json();
+      if (typeof body?.error === 'string' && body.error.trim()) return body.error;
+    } catch (parseError) {
+      console.error('Could not read PIX function error response.', parseError);
+    }
+    if (response.status === 401) return 'Sua sessão expirou. Saia da conta, entre novamente e tente gerar o Pix.';
+    if (response.status === 404) return 'A função de pagamento não foi encontrada. Confirme se ela foi publicada no Supabase.';
+    if (response.status >= 500) return `O servidor de pagamento retornou erro ${response.status}. Consulte os logs da função no Supabase.`;
+  }
+  return 'Não foi possível conectar ao servidor de pagamento. Confira sua conexão e tente novamente.';
 }
 
 function startPaymentStatusPolling() {
@@ -748,7 +906,7 @@ function renderCart() {
       </div>
       <div class="cart-summary">
         <div class="subtotal"><span>Subtotal</span><strong>${formatPrice(total)}</strong></div>
-        <p>Pagamento via Pix seguro pelo Mercado Pago.</p>
+        <p>Pagamento via Pix.</p>
         <div class="total-row"><span>Total</span><strong>${formatPrice(total)}</strong></div>
         <p class="demo-cart-note">Confira seus produtos e quantidades antes de continuar.</p>
         <button type="button" class="button button-primary button-wide" id="start-checkout">Finalizar compra <span aria-hidden="true">→</span></button>
@@ -934,7 +1092,7 @@ function renderCheckout() {
           <label class="payment-option">
             <input type="radio" name="payment" value="pix" ${state.paymentMethod === 'pix' ? 'checked' : ''} required>
             <span class="payment-option-icon" aria-hidden="true">Pix</span>
-            <span><strong>Pix</strong><small>QR Code gerado e confirmado pelo Mercado Pago</small></span>
+            <span><strong>Pix</strong><small>QR Code Pix para pagamento</small></span>
           </label>
         </fieldset>
         ${state.checkoutError ? `<p class="form-error" role="alert">${escapeHtml(state.checkoutError)}</p>` : ''}
@@ -951,17 +1109,28 @@ function renderCheckout() {
         ${state.paymentPending ? `
           <span class="pix-demo-mark" aria-hidden="true">PIX</span>
           <p class="pix-demo-amount">${formatPrice(total)}</p>
-          <p>Conectando ao Mercado Pago e preparando seu QR Code...</p>
+          <p>Preparando seu QR Code Pix...</p>
         ` : `
-          ${state.order.qrCodeBase64 ? `<img class="pix-qr-code" src="data:image/png;base64,${escapeHtml(state.order.qrCodeBase64)}" alt="QR Code Pix do pedido ${escapeHtml(state.order.number)}">` : '<span class="pix-demo-mark" aria-hidden="true">PIX</span>'}
+          ${state.order.paymentProvider === 'manual_pix'
+            ? `<div id="manual-pix-qr" class="pix-qr-code manual-pix-qr" role="img" aria-label="QR Code Pix do pedido ${escapeHtml(state.order.number)}"></div>`
+            : state.order.qrCodeBase64
+              ? `<img class="pix-qr-code" src="data:image/png;base64,${escapeHtml(state.order.qrCodeBase64)}" alt="QR Code Pix do pedido ${escapeHtml(state.order.number)}">`
+              : '<span class="pix-demo-mark" aria-hidden="true">PIX</span>'}
           <p class="pix-demo-amount">${formatPrice(total)}</p>
-          <p>Escaneie o QR Code com o aplicativo do seu banco ou copie o código Pix abaixo. A confirmação pode levar alguns instantes.</p>
+          <p>${state.order.paymentProvider === 'manual_pix'
+            ? 'Pague pela sua instituição financeira e use o código Pix copia e cola. A loja confirmará o recebimento manualmente; o status pode levar alguns instantes para atualizar.'
+            : 'Escaneie o QR Code com o aplicativo do seu banco ou copie o código Pix abaixo. A confirmação pode levar alguns instantes.'}</p>
           <label class="pix-copy-field"><span>Código Pix copia e cola</span><textarea id="pix-copy-code" readonly rows="4">${escapeHtml(state.order.qrCode || '')}</textarea></label>
           <div class="checkout-actions pix-actions">
             <button type="button" class="button button-cancel" id="copy-pix-code">Copiar código Pix</button>
+            ${state.order.paymentProvider === 'manual_pix'
+              ? state.order.customerReportedPaidAt
+                ? '<span class="pix-payment-status">Aviso enviado à loja; aguardando conferência.</span>'
+                : '<button type="button" class="button button-cancel" id="report-manual-pix-paid">Já paguei</button>'
+              : ''}
             ${state.order.ticketUrl ? `<a class="button button-primary" href="${escapeHtml(state.order.ticketUrl)}" target="_blank" rel="noopener noreferrer">Abrir no Mercado Pago</a>` : ''}
           </div>
-          <p class="pix-payment-status" role="status">Status: ${state.order.status === 'paid' ? 'pagamento aprovado' : 'aguardando pagamento'}. Esta tela será atualizada automaticamente.</p>
+          <p class="pix-payment-status" role="status">Status: ${state.order.status === 'paid' ? 'pagamento aprovado' : state.order.paymentProvider === 'manual_pix' ? 'aguardando conferência da loja' : 'aguardando pagamento'}. ${state.order.paymentProvider === 'manual_pix' ? 'Após confirmar o recebimento no banco, a loja atualizará o pedido.' : 'Esta tela será atualizada automaticamente.'}</p>
         `}
         ${state.checkoutError ? `<p class="form-error" role="alert">${escapeHtml(state.checkoutError)}</p>` : ''}
       </div>
@@ -991,7 +1160,7 @@ function renderCheckout() {
           <div class="checkout-summary-items">${itemsMarkup}</div>
           <div class="total-row"><span>Total</span><strong>${formatPrice(total)}</strong></div>
           ${deliverySummary}
-          <p class="demo-cart-note">Pagamento processado com segurança pelo Mercado Pago.</p>
+          <p class="demo-cart-note">Pagamento via Pix.</p>
         </aside>
       </div>
     </section>
@@ -1114,10 +1283,96 @@ function renderOrdersView() {
                 `).join('')}
               </ul>` : '<p>Os produtos deste pedido serão exibidos após a confirmação do Pix.</p>'}
               <div class="order-detail-total"><span>Total do pedido</span><strong>${formatPrice(order.total)}</strong></div>
+              ${order.paymentProvider === 'manual_pix' && order.status !== 'Pago' && order.status !== 'Pagamento não concluído'
+                ? order.customerReportedPaidAt
+                  ? '<p class="pix-payment-status">Pagamento informado. A loja fará a conferência.</p>'
+                  : `<button type="button" class="button button-cancel" data-report-manual-pix="${escapeHtml(order.id)}">Já paguei</button>`
+                : ''}
+              ${order.status === 'Compra cancelada' ? `
+                <section class="order-cancellation-notice" aria-label="Aviso de cancelamento">
+                  <strong>Compra cancelada</strong>
+                  <p>${escapeHtml(order.cancellationMessage || 'A loja cancelou esta compra.')}</p>
+                  ${order.refundAmount !== null ? `<p>Valor para devolução: <strong>${formatPrice(order.refundAmount)}</strong>. A devolução será feita manualmente pela loja.</p>` : ''}
+                </section>
+              ` : ''}
             </div>
           ` : ''}
         </article>
       `).join('')}</div>` : `<div class="empty-search orders-empty"><h3>Você ainda não tem pedidos</h3><p>Seus pedidos e pagamentos aparecerão aqui.</p><button type="button" class="button button-primary" data-view="home">Explorar novidades</button></div>`}
+    </section>
+  `;
+}
+
+function renderAdminOrdersView() {
+  return `
+    <section class="store-view" aria-labelledby="view-title">
+      <div class="view-heading">
+        <div><p class="eyebrow eyebrow-muted">Área restrita da loja</p><h1 id="view-title">Conferir pedidos Pix</h1><p>Confira o crédito no aplicativo do banco antes de confirmar o pagamento.</p></div>
+        <button type="button" class="button button-cancel" id="refresh-admin-orders">Atualizar</button>
+      </div>
+      ${state.adminOrderError ? `<p class="form-error" role="alert">${escapeHtml(state.adminOrderError)}</p>` : ''}
+      ${state.adminOrdersLoading ? '<p role="status">Carregando pedidos...</p>' : state.adminOrders.length ? `
+        <div class="orders-list">
+          ${state.adminOrders.map((order) => {
+            const delivery = order.delivery || {};
+            const pickup = delivery.receiveMethod === 'station';
+            const deliveryText = pickup
+              ? `Retirada: ${String(delivery.station || 'Estação não informada').replace(/-/g, ' ')}`
+              : `Entrega: ${[delivery.street, delivery.number].filter(Boolean).join(', ')}${delivery.deliveryNote ? ` · ${delivery.deliveryNote}` : ''}`;
+            return `
+              <article class="order-row admin-order-row">
+                <div class="order-row-main">
+                  <span class="order-status">${order.status === 'paid' ? 'Pago' : order.status === 'cancelled' ? 'Compra cancelada' : order.status === 'failed' ? 'Falhou' : order.customer_reported_paid_at ? 'Cliente informou pagamento' : 'Aguardando Pix'}</span>
+                  <h2>Pedido ${escapeHtml(order.number)}</h2>
+                  <p>${new Date(order.created_at).toLocaleString('pt-BR')} · ${order.item_count} itens</p>
+                </div>
+                <strong>${formatPrice(Number(order.total))}</strong>
+                <div class="admin-order-details">
+                  <p><strong>Cliente:</strong> ${escapeHtml(order.customer_name)} · ${escapeHtml(order.customer_phone)}</p>
+                  <p><strong>Recebimento:</strong> ${escapeHtml(deliveryText)}</p>
+                  <h3>Produtos</h3>
+                  <ul class="order-item-list">
+                    ${order.items.map((item) => `
+                      <li class="order-item">
+                        <span class="order-item-quantity">${item.quantity}×</span>
+                        <span class="order-item-name">${escapeHtml(item.product.name)}<small>${escapeHtml(getItemVariantLabel(item.color, item.type))}</small></span>
+                        <strong>${formatPrice(Number(item.unit_price) * item.quantity)}</strong>
+                      </li>
+                    `).join('')}
+                  </ul>
+                  ${order.status === 'cancelled' ? `
+                    <section class="order-cancellation-notice">
+                      <strong>Compra cancelada</strong>
+                      <p>${escapeHtml(order.cancellation_message || '')}</p>
+                      ${order.refund_amount !== null ? `<p>Valor a devolver: <strong>${formatPrice(Number(order.refund_amount))}</strong> · devolução manual via Pix</p>` : '<p>Pedido cancelado antes da confirmação do pagamento; não há valor de devolução registrado.</p>'}
+                    </section>
+                  ` : ''}
+                  ${order.status === 'pending' ? `<button type="button" class="button button-primary" data-confirm-manual-pix="${escapeHtml(order.id)}">Confirmar recebimento no banco</button>` : ''}
+                  ${['pending', 'paid'].includes(order.status) ? `<button type="button" class="button button-cancel" data-cancel-manual-pix="${escapeHtml(order.id)}" data-cancel-total="${escapeHtml(String(Number(order.total)))}" data-cancel-paid="${order.status === 'paid'}">Cancelar compra</button>${order.status === 'paid' ? `<p class="refund-amount-note">Valor a devolver ao cliente: <strong>${formatPrice(Number(order.total))}</strong></p>` : ''}` : ''}
+                </div>
+              </article>
+            `;
+          }).join('')}
+        </div>
+      ` : '<div class="empty-search orders-empty"><h3>Nenhum pedido Pix encontrado</h3><p>Novos pedidos aparecerão aqui.</p></div>'}
+    </section>
+  `;
+}
+
+function renderNotificationsView() {
+  const notifications = state.orders.filter((order) => order.status === 'Compra cancelada');
+  return `
+    <section class="store-view" aria-labelledby="view-title">
+      <div class="view-heading"><div><p class="eyebrow eyebrow-muted">Sua conta</p><h1 id="view-title">Notificações</h1><p>Avisos enviados pela loja sobre seus pedidos.</p></div></div>
+      ${notifications.length ? `<div class="notification-list">${notifications.map((order) => `
+        <article class="order-cancellation-notice">
+          <p class="eyebrow eyebrow-muted">Pedido ${escapeHtml(order.number)} · ${new Date(order.cancelledAt || order.createdAt).toLocaleString('pt-BR')}</p>
+          <h2>Compra cancelada</h2>
+          <p>${escapeHtml(order.cancellationMessage || 'A loja cancelou esta compra.')}</p>
+          ${order.refundAmount !== null ? `<p>Valor para devolução: <strong>${formatPrice(order.refundAmount)}</strong>. A devolução é feita manualmente pela loja.</p>` : ''}
+          <button type="button" class="text-button" data-view="orders">Ver pedido</button>
+        </article>
+      `).join('')}</div>` : '<div class="empty-search orders-empty"><h3>Nenhuma notificação</h3><p>Os avisos da loja aparecerão aqui.</p></div>'}
     </section>
   `;
 }
@@ -1169,6 +1424,8 @@ function renderCurrentView(firstName) {
       : content;
   }
   if (state.view === 'orders') return renderOrdersView();
+  if (state.view === 'notifications') return renderNotificationsView();
+  if (state.view === 'admin-orders' && state.isStoreAdmin) return renderAdminOrdersView();
   if (state.view === 'profile') return renderProfileView();
   if (state.view === 'settings') return renderSettingsView();
   return renderSupportView();
@@ -1198,8 +1455,9 @@ function renderStore() {
     ? Math.min(state.quantities[selectedProduct.id] || 1, selectedProductVariantAvailable)
     : 0;
   const contentKey = `${state.view}:${state.checkoutStep}:${state.selectedCategory || ''}`;
-  const enteringContent = state.renderedContentKey !== contentKey;
+  const enteringContent = state.renderedContentKey !== contentKey || state.contentRefresh;
   state.renderedContentKey = contentKey;
+  state.contentRefresh = false;
 
   document.documentElement.dataset.theme = state.theme;
   app.innerHTML = `
@@ -1213,6 +1471,8 @@ function renderStore() {
           <button type="button" class="sidebar-link${state.view === 'categories' ? ' is-active' : ''}" data-view="categories"><span aria-hidden="true">▦</span><span>Categorias</span><b aria-hidden="true">${state.view === 'categories' ? '⌄' : '›'}</b></button>
           ${state.view === 'categories' ? `<div class="sidebar-category-list">${categories.map((category) => `<button type="button" class="sidebar-category${state.selectedCategory === category.id ? ' is-active' : ''}" data-category-choose="${category.id}">${escapeHtml(category.name)}</button>`).join('')}</div>` : ''}
           <button type="button" class="sidebar-link${state.view === 'orders' ? ' is-active' : ''}" data-view="orders"><span aria-hidden="true">▣</span><span>Pedidos</span><b class="sidebar-badge">${state.orders.length}</b></button>
+          <button type="button" class="sidebar-link${state.view === 'notifications' ? ' is-active' : ''}" data-view="notifications"><span aria-hidden="true">♢</span><span>Notificações</span>${state.cancellationNotificationCount ? `<b class="sidebar-badge">${state.cancellationNotificationCount}</b>` : ''}</button>
+          ${state.isStoreAdmin ? `<button type="button" class="sidebar-link${state.view === 'admin-orders' ? ' is-active' : ''}" data-view="admin-orders"><span aria-hidden="true">✓</span><span>Conferir pagamentos</span></button>` : ''}
           <button type="button" class="sidebar-link${state.view === 'settings' ? ' is-active' : ''}" data-view="settings"><span aria-hidden="true">⚙</span><span>Configurações</span></button>
           <button type="button" class="sidebar-link${state.view === 'support' ? ' is-active' : ''}" data-view="support"><span aria-hidden="true">?</span><span>Suporte</span></button>
           <button type="button" class="sidebar-link sidebar-logout" id="logout"><span aria-hidden="true">↪</span><span>Sair</span></button>
@@ -1299,7 +1559,8 @@ function renderStore() {
       state.search = '';
       state.selectedOrder = null;
       state.sidebarOpen = false;
-      if (state.view === 'orders') void loadCustomerOrders();
+      if (state.view === 'orders' || state.view === 'notifications') void loadCustomerOrders();
+      if (state.view === 'admin-orders') void loadAdminOrders();
       renderStore();
     });
   });
@@ -1340,6 +1601,43 @@ function renderStore() {
         : state.orders.find((order) => order.number === button.dataset.orderDetail);
       renderStore();
     });
+  });
+  app.querySelectorAll('[data-report-manual-pix]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void reportManualPixPaid(button.dataset.reportManualPix);
+    });
+  });
+  app.querySelectorAll('[data-confirm-manual-pix]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!window.confirm('Confirme somente após verificar o crédito no aplicativo do banco. Marcar este pedido como pago?')) return;
+      button.disabled = true;
+      void confirmManualPixOrder(button.dataset.confirmManualPix);
+    });
+  });
+  app.querySelectorAll('[data-cancel-manual-pix]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const isPaid = button.dataset.cancelPaid === 'true';
+      const refundAmount = Number(button.dataset.cancelTotal);
+      const refundNote = isPaid
+        ? ` O valor de ${formatPrice(refundAmount)} ficará registrado como valor a devolver, mas a transferência deverá ser feita manualmente.`
+        : '';
+      const message = window.prompt(
+        `Escreva uma mensagem para o cliente explicando o cancelamento.${refundNote}`,
+        isPaid
+          ? `Sua compra foi cancelada. Entraremos em contato para combinar a devolução de ${formatPrice(refundAmount)}.`
+          : 'Sua compra foi cancelada pela loja.',
+      );
+      if (message === null) return;
+      if (!message.trim() || message.trim().length > 500) {
+        window.alert('A mensagem deve ter entre 1 e 500 caracteres.');
+        return;
+      }
+      button.disabled = true;
+      void cancelManualPixOrder(button.dataset.cancelManualPix, message.trim());
+    });
+  });
+  app.querySelector('#refresh-admin-orders')?.addEventListener('click', () => {
+    void loadAdminOrders();
   });
   app.querySelector('#theme-toggle')?.addEventListener('click', () => {
     state.theme = state.theme === 'dark' ? 'light' : 'dark';
@@ -1457,6 +1755,9 @@ function renderStore() {
       state.checkoutError = 'Não foi possível copiar automaticamente. Selecione e copie o código Pix.';
       renderStore();
     }
+  });
+  app.querySelector('#report-manual-pix-paid')?.addEventListener('click', () => {
+    void reportManualPixPaid(state.order.id);
   });
   app.querySelector('#finish-checkout')?.addEventListener('click', () => {
     window.clearInterval(state.orderStatusTimer);
