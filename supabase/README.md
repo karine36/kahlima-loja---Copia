@@ -115,8 +115,7 @@ Estado registrado em 17/10/2026:
   Uma chamada de smoke test sem assinatura retornou HTTP 401 como esperado.
 - Ainda pendente: fazer uma compra de teste completa, confirmar a aprovação PIX e
   verificar que os itens aparecem em `orders`/`order_items`.
-- Antes da publicação para clientes: revisar que frete e estoque ainda não são
-  calculados/reservados no servidor; confirmar SMTP e URL de recuperação de senha;
+- Antes da publicação para clientes: revisar cálculo de frete/entrega; confirmar SMTP e URL de recuperação de senha;
   configurar credenciais e webhook de produção após os testes.
 
 ## Pix com conferência manual
@@ -175,12 +174,42 @@ contato, endereço/estação, produtos e quantidades. A função de confirmaçã
 permissão de administradora no banco; clientes não podem acessar dados de outros pedidos
 nem confirmar pagamentos.
 
+## Estoque, edição de pedido e mensagens
+
+A migration `20261023042000_add_store_stock_and_customer_updates.sql` adiciona:
+
+- **Estoque:** o menu **Estoque** permite atualizar unidades disponíveis; produtos com
+  variações permitem ajustar cada cor separadamente. O checkout consulta o estoque do
+  Supabase e bloqueia pedidos que já excedem a disponibilidade. A quantidade é baixada
+  quando o pagamento é confirmado; pedidos aguardando Pix não reservam unidades. Se
+  pagamentos simultâneos excederem o saldo antes da confirmação, o pedido continua
+  registrado como pago, o saldo pode ficar negativo e o painel sinaliza para a loja
+  resolver a disponibilidade com o cliente.
+- **Editar pedido:** pedidos Pix pendentes ou pagos permitem corrigir nome, telefone e
+  dados de entrega/retirada. Produtos e valores do pedido não podem ser alterados, para
+  preservar a conferência financeira e o histórico.
+- **Mensagens:** no pedido, **Enviar mensagem ao cliente** grava um aviso individual de
+  até 1000 caracteres na área **Notificações** do cliente. A mensagem não é enviada por
+  e-mail nem como push; aparece quando o cliente atualizar ou abrir a área de notificações.
+
+Para habilitar as mudanças no banco e na Edge Function, execute na raiz do projeto:
+
+```powershell
+npx --yes supabase db push
+npx --yes supabase functions deploy create-pix-payment
+```
+
+Depois publique também o frontend. O valor inicial de estoque foi sincronizado com as
+quantidades atuais do catálogo; revise e ajuste pelo menu administrativo **Estoque**.
+
 Na área administrativa, pedidos pendentes ou pagos podem ser cancelados com uma mensagem
 personalizada de até 500 caracteres. O cliente verá o aviso em **Notificações** e no
 resumo do pedido. Para pedidos já pagos, o total fica registrado como valor a devolver;
 essa marcação não transfere dinheiro. A devolução deve ser realizada manualmente pelo
 banco e conferida pela loja. Pedidos cancelados antes da confirmação do pagamento não
-recebem um valor de devolução registrado.
+recebem um valor de devolução registrado. Cancelar um pedido pago não repõe estoque
+automaticamente; ajuste o estoque pelo menu **Estoque** depois de conferir os produtos
+fisicamente.
 
 Ao retomar, o catálogo, os secrets e as funções já estão no Supabase remoto. Faça
 login na loja, gere um Pix de teste, conclua o pagamento pela conta compradora de teste

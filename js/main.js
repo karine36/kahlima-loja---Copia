@@ -5,6 +5,15 @@ const { findProductsById } = window.KahLimaProductSearch;
 const { renderProductDetail, bindProductDetail } = window.KahLimaProductDetail;
 const { escapeHtml, formatPrice, digitsOnly, formatCpf, isValidCpf, formatPhone, initials, avatarMarkup } = window.KahLimaUtils;
 const storePath = '#loja';
+const pickupStations = [
+  { value: 'itaim-paulista', label: 'Itaim Paulista' },
+  { value: 'jardim-helena-vila-mara', label: 'Jardim Helena–Vila Mara' },
+  { value: 'sao-miguel-paulista', label: 'São Miguel Paulista' },
+  { value: 'comendador-ermelino', label: 'Comendador Ermelino' },
+  { value: 'usp-leste', label: 'USP Leste' },
+  { value: 'engenheiro-goulart', label: 'Engenheiro Goulart' },
+  { value: 'tatuape', label: 'Tatuapé' },
+];
 
 function cartItemKey(item) {
   return JSON.stringify([item.id, item.color || '', item.type || '']);
@@ -76,10 +85,15 @@ const state = {
   sidebarOpen: false,
   orders: [],
   adminOrders: [],
+  adminStockProducts: [],
+  adminStockLoading: false,
+  adminStockError: '',
+  customerNotifications: [],
+  editingOrderId: null,
   isStoreAdmin: false,
   adminOrdersLoading: false,
   adminOrderError: '',
-  cancellationNotificationCount: 0,
+  notificationCount: 0,
   selectedOrder: null,
   theme: localStorage.getItem('kahLimaTheme') || 'light',
   profileOpen: false,
@@ -384,6 +398,7 @@ function getAuthErrorMessage(error, mode) {
 
 function setAuthenticatedUser(user) {
   const metadata = user.user_metadata || {};
+  const isSameUser = state.userId === user.id;
   state.profile = {
     name: metadata.full_name || user.email?.split('@')[0] || 'Cliente',
     email: user.email || '',
@@ -392,8 +407,13 @@ function setAuthenticatedUser(user) {
     photoUrl: '',
   };
   state.userId = user.id;
-  state.cart = [];
+  if (!isSameUser) state.cart = [];
   state.orders = [];
+  state.customerNotifications = [];
+  state.notificationCount = 0;
+  state.adminOrders = [];
+  state.adminStockProducts = [];
+  state.isStoreAdmin = false;
   state.view = 'home';
   state.selectedCategory = null;
   state.search = '';
@@ -407,6 +427,7 @@ function setAuthenticatedUser(user) {
   state.authPending = false;
   state.authInitializing = false;
   void loadCustomerOrders();
+  void loadStoreInventory();
   void loadStoreAdminAccess(user.id);
   if (window.location.hash === storePath) renderStore();
   else goTo(storePath);
@@ -422,7 +443,7 @@ async function loadStoreAdminAccess(userId) {
   }
   if (state.userId !== userId) return;
   state.isStoreAdmin = data === true;
-  if (!state.isStoreAdmin && state.view === 'admin-orders') state.view = 'home';
+  if (!state.isStoreAdmin && ['admin-orders', 'admin-stock'].includes(state.view)) state.view = 'home';
   renderStore();
 }
 
@@ -430,6 +451,7 @@ async function loadCustomerOrders() {
   const supabase = window.KahLimaSupabase?.client;
   if (!supabase || !state.userId) return;
   const userId = state.userId;
+  const previousNotificationCount = state.notificationCount;
   state.ordersLoading = true;
   const { data, error } = await supabase
     .from('orders')
@@ -479,11 +501,58 @@ async function loadCustomerOrders() {
       })),
     };
   });
-  state.cancellationNotificationCount = state.orders.filter((order) => order.status === 'Compra cancelada').length;
-  if (state.view === 'orders' || state.view === 'notifications') {
+  const { data: notifications, error: notificationsError } = await supabase
+    .from('order_notifications')
+    .select('id,order_id,message,created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (state.userId !== userId) return;
+  if (notificationsError) {
+    console.error('Could not load customer notifications.', notificationsError);
+    state.notice = 'Não foi possível carregar as notificações. Atualize a página para tentar novamente.';
+  } else {
+    const orderNumbers = new Map(state.orders.map((order) => [order.id, order.number]));
+    state.customerNotifications = (notifications || []).map((notification) => ({
+      ...notification,
+      orderNumber: orderNumbers.get(notification.order_id) || notification.order_id.slice(0, 8).toUpperCase(),
+    }));
+  }
+  state.notificationCount = state.customerNotifications.length
+    + state.orders.filter((order) => order.status === 'Compra cancelada').length;
+  if (state.view === 'orders' || state.view === 'notifications'
+    || state.notificationCount !== previousNotificationCount) {
     state.contentRefresh = true;
     renderStore();
   }
+}
+
+function applyInventoryRows(rows) {
+  const inventoryById = new Map(rows.map((row) => [row.id, row]));
+  products.forEach((product) => {
+    const inventory = inventoryById.get(product.id);
+    if (!inventory) return;
+    product.stock = Number(inventory.stock);
+    product.stockByColor = inventory.stock_by_color && Object.keys(inventory.stock_by_color).length
+      ? { ...inventory.stock_by_color }
+      : undefined;
+  });
+}
+
+async function loadStoreInventory() {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from('products')
+    .select('id,stock,stock_by_color')
+    .eq('active', true);
+  if (error) {
+    console.error('Could not load live product inventory.', error);
+    state.notice = 'Não foi possível atualizar o estoque. O checkout ainda validará a disponibilidade no servidor.';
+    renderStore();
+    return;
+  }
+  applyInventoryRows(data || []);
+  renderStore();
 }
 
 async function loadAdminOrders() {
@@ -494,7 +563,7 @@ async function loadAdminOrders() {
   renderStore();
   const { data, error } = await supabase
     .from('orders')
-    .select('id,status,total,item_count,created_at,customer_name,customer_phone,delivery,items_snapshot,customer_reported_paid_at,payment_provider,cancellation_message,cancelled_at,refund_amount')
+    .select('id,status,total,item_count,created_at,customer_name,customer_phone,delivery,items_snapshot,customer_reported_paid_at,payment_provider,cancellation_message,cancelled_at,refund_amount,inventory_shortfall')
     .eq('payment_provider', 'manual_pix')
     .order('created_at', { ascending: false });
   state.adminOrdersLoading = false;
@@ -522,6 +591,47 @@ async function loadAdminOrders() {
   renderStore();
 }
 
+async function loadAdminStock() {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase || !state.isStoreAdmin) return;
+  state.adminStockLoading = true;
+  state.adminStockError = '';
+  renderStore();
+  const { data, error } = await supabase
+    .from('products')
+    .select('id,stock,stock_by_color,active')
+    .eq('active', true)
+    .order('id');
+  state.adminStockLoading = false;
+  if (error) {
+    console.error('Could not load product inventory for store admin.', error);
+    state.adminStockError = 'Não foi possível carregar o estoque. Atualize e tente novamente.';
+    renderStore();
+    return;
+  }
+  state.adminStockProducts = data || [];
+  applyInventoryRows(state.adminStockProducts);
+  state.contentRefresh = true;
+  renderStore();
+}
+
+async function saveProductStock(productId, stock, stockByColor) {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase || !state.isStoreAdmin) return;
+  const { error } = await supabase.rpc('update_product_stock', {
+    p_product_id: productId,
+    p_stock: stock,
+    p_stock_by_color: stockByColor,
+  });
+  if (error) {
+    console.error('Could not update product inventory.', error);
+    state.adminStockError = 'Não foi possível salvar o estoque. Confira os valores e tente novamente.';
+    renderStore();
+    return;
+  }
+  await loadAdminStock();
+}
+
 async function confirmManualPixOrder(orderId) {
   const supabase = window.KahLimaSupabase?.client;
   if (!supabase || !state.isStoreAdmin) return;
@@ -533,6 +643,7 @@ async function confirmManualPixOrder(orderId) {
     return;
   }
   await loadAdminOrders();
+  await loadStoreInventory();
 }
 
 async function cancelManualPixOrder(orderId, message) {
@@ -548,6 +659,43 @@ async function cancelManualPixOrder(orderId, message) {
     renderStore();
     return;
   }
+  await loadAdminOrders();
+}
+
+async function sendCustomerOrderNotification(orderId, message) {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase || !state.isStoreAdmin) return;
+  const { error } = await supabase.rpc('send_order_notification', {
+    p_order_id: orderId,
+    p_message: message,
+  });
+  if (error) {
+    console.error('Could not send customer order notification.', error);
+    state.adminOrderError = 'Não foi possível enviar a mensagem. Atualize e tente novamente.';
+    renderStore();
+    return;
+  }
+  state.adminOrderError = '';
+  state.notice = 'Mensagem enviada para as notificações do cliente.';
+  await loadAdminOrders();
+}
+
+async function updateManualPixOrderDetails(orderId, customerName, customerPhone, delivery) {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase || !state.isStoreAdmin) return;
+  const { error } = await supabase.rpc('update_manual_pix_order_details', {
+    p_order_id: orderId,
+    p_customer_name: customerName,
+    p_customer_phone: customerPhone,
+    p_delivery: delivery,
+  });
+  if (error) {
+    console.error('Could not update manual Pix order details.', error);
+    state.adminOrderError = 'Não foi possível atualizar os dados do pedido. Confira os campos e tente novamente.';
+    renderStore();
+    return;
+  }
+  state.editingOrderId = null;
   await loadAdminOrders();
 }
 
@@ -578,14 +726,35 @@ async function createPixPayment() {
   }
 
   try {
-    const { data, error } = await supabase.functions.invoke('create-pix-payment', {
-      body: {
-        items: state.cart.map(({ id, quantity, color, type }) => ({ id, quantity, color, type })),
-        delivery: state.checkoutDelivery,
-      },
-    });
+    const requestBody = {
+      items: state.cart.map(({ id, quantity, color, type }) => ({ id, quantity, color, type })),
+      delivery: state.checkoutDelivery,
+    };
+    let { data, error } = await supabase.functions.invoke('create-pix-payment', { body: requestBody });
+    if (error?.context?.status === 401) {
+      const { data: refreshedSession, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        console.error('Could not refresh the customer session after PIX authorization failed.', refreshError);
+      }
+      if (refreshedSession.session?.access_token) {
+        ({ data, error } = await supabase.functions.invoke('create-pix-payment', { body: requestBody }));
+      } else {
+        state.error = 'Sua sessão expirou. Entre novamente para continuar; sua sacola será mantida nesta página.';
+        state.checkoutError = '';
+        state.authScreen = 'login';
+        goTo('');
+        return;
+      }
+    }
     if (error || data?.error || !data?.orderId || !data?.qrCode) {
       if (error) console.error('PIX request failed.', error);
+      if (error?.context?.status === 401) {
+        state.error = 'Não foi possível validar sua sessão. Entre novamente para continuar; sua sacola será mantida nesta página.';
+        state.checkoutError = '';
+        state.authScreen = 'login';
+        goTo('');
+        return;
+      }
       state.checkoutError = data?.error
         || (error ? await getPixRequestErrorMessage(error) : 'O servidor não retornou os dados do Pix. Tente novamente.');
       state.paymentPending = false;
@@ -986,15 +1155,7 @@ function bindCartPanel(panel) {
 function renderCheckout() {
   const steps = ['Seus dados', 'Local', 'Pagamento', 'Pix', 'Confirmado'];
   const currentStep = state.checkoutStep;
-  const stations = [
-    { value: 'itaim-paulista', label: 'Itaim Paulista' },
-    { value: 'jardim-helena-vila-mara', label: 'Jardim Helena–Vila Mara' },
-    { value: 'sao-miguel-paulista', label: 'São Miguel Paulista' },
-    { value: 'comendador-ermelino', label: 'Comendador Ermelino' },
-    { value: 'usp-leste', label: 'USP Leste' },
-    { value: 'engenheiro-goulart', label: 'Engenheiro Goulart' },
-    { value: 'tatuape', label: 'Tatuapé' },
-  ];
+  const stations = pickupStations;
   const cartItems = state.cart
     .map((item) => ({ ...item, product: products.find((product) => product.id === item.id) }))
     .filter((item) => item.product);
@@ -1340,6 +1501,12 @@ function renderAdminOrdersView() {
                       </li>
                     `).join('')}
                   </ul>
+                  ${order.inventory_shortfall ? `
+                    <section class="order-cancellation-notice inventory-shortfall">
+                      <strong>Atenção: estoque abaixo do necessário</strong>
+                      <p>Este pedido foi pago, mas houve outra compra antes da confirmação. Confira a disponibilidade e combine a entrega com o cliente.</p>
+                    </section>
+                  ` : ''}
                   ${order.status === 'cancelled' ? `
                     <section class="order-cancellation-notice">
                       <strong>Compra cancelada</strong>
@@ -1349,6 +1516,13 @@ function renderAdminOrdersView() {
                   ` : ''}
                   ${order.status === 'pending' ? `<button type="button" class="button button-primary" data-confirm-manual-pix="${escapeHtml(order.id)}">Confirmar recebimento no banco</button>` : ''}
                   ${['pending', 'paid'].includes(order.status) ? `<button type="button" class="button button-cancel" data-cancel-manual-pix="${escapeHtml(order.id)}" data-cancel-total="${escapeHtml(String(Number(order.total)))}" data-cancel-paid="${order.status === 'paid'}">Cancelar compra</button>${order.status === 'paid' ? `<p class="refund-amount-note">Valor a devolver ao cliente: <strong>${formatPrice(Number(order.total))}</strong></p>` : ''}` : ''}
+                  ${['pending', 'paid'].includes(order.status) ? `
+                    <div class="admin-order-actions">
+                      <button type="button" class="text-button" data-toggle-order-edit="${escapeHtml(order.id)}">${state.editingOrderId === order.id ? 'Fechar edição' : 'Editar contato/entrega'}</button>
+                      <button type="button" class="text-button" data-send-order-notification="${escapeHtml(order.id)}">Enviar mensagem ao cliente</button>
+                    </div>
+                    ${state.editingOrderId === order.id ? renderOrderEditForm(order) : ''}
+                  ` : ''}
                 </div>
               </article>
             `;
@@ -1359,17 +1533,92 @@ function renderAdminOrdersView() {
   `;
 }
 
+function renderOrderEditForm(order) {
+  const delivery = order.delivery || {};
+  return `
+    <form class="admin-order-edit-form" data-edit-order="${escapeHtml(order.id)}">
+      <h3>Editar contato e recebimento</h3>
+      <label>Nome do cliente<input name="customerName" maxlength="120" required value="${escapeHtml(order.customer_name || '')}"></label>
+      <label>Telefone<input name="customerPhone" maxlength="30" required value="${escapeHtml(order.customer_phone || '')}"></label>
+      <label>Forma de recebimento
+        <select name="receiveMethod">
+          <option value="nearby" ${delivery.receiveMethod === 'nearby' ? 'selected' : ''}>Entrega</option>
+          <option value="station" ${delivery.receiveMethod === 'station' ? 'selected' : ''}>Retirada em estação</option>
+        </select>
+      </label>
+      <div class="admin-delivery-fields">
+        <label>Rua<input name="street" maxlength="160" value="${escapeHtml(delivery.street || '')}"></label>
+        <label>Número<input name="number" maxlength="20" value="${escapeHtml(delivery.number || '')}"></label>
+        <label>Observação<input name="deliveryNote" maxlength="300" value="${escapeHtml(delivery.deliveryNote || '')}"></label>
+      </div>
+      <label>Estação de retirada
+        <select name="station">
+          ${pickupStations.map((station) => `<option value="${station.value}" ${delivery.station === station.value ? 'selected' : ''}>${station.label}</option>`).join('')}
+        </select>
+      </label>
+      <button class="button button-primary" type="submit">Salvar dados do pedido</button>
+    </form>
+  `;
+}
+
+function renderAdminStockView() {
+  return `
+    <section class="store-view" aria-labelledby="view-title">
+      <div class="view-heading">
+        <div><p class="eyebrow eyebrow-muted">Área restrita da loja</p><h1 id="view-title">Controle de estoque</h1><p>O estoque é baixado quando o pagamento é confirmado. Pedidos aguardando Pix não reservam unidades.</p></div>
+        <button type="button" class="button button-cancel" id="refresh-admin-stock">Atualizar</button>
+      </div>
+      ${state.adminStockError ? `<p class="form-error" role="alert">${escapeHtml(state.adminStockError)}</p>` : ''}
+      ${state.adminStockLoading ? '<p role="status">Carregando estoque...</p>' : state.adminStockProducts.length ? `
+        <div class="admin-stock-list">
+          ${state.adminStockProducts.map((row) => {
+            const product = products.find((item) => item.id === row.id);
+            const variants = row.stock_by_color || {};
+            return `
+              <form class="admin-stock-row" data-stock-product="${escapeHtml(row.id)}">
+                <div class="admin-stock-product"><strong>${escapeHtml(product?.name || row.id)}</strong><small>${escapeHtml(row.id)}</small></div>
+                ${Object.keys(variants).length
+                  ? `<div class="admin-stock-variants">${Object.entries(variants).map(([color, quantity]) => `
+                    <label>${escapeHtml(color)}<input type="number" min="0" step="1" required name="variantStock" data-stock-color="${escapeHtml(color)}" value="${Number(quantity)}"></label>
+                  `).join('')}</div>`
+                  : `<label>Unidades<input type="number" min="0" step="1" required name="stock" value="${Number(row.stock)}"></label>`}
+                <button type="submit" class="button button-primary">Salvar</button>
+              </form>
+            `;
+          }).join('')}
+        </div>
+      ` : '<div class="empty-search orders-empty"><h3>Nenhum produto ativo</h3><p>Os produtos ativos aparecerão aqui.</p></div>'}
+    </section>
+  `;
+}
+
 function renderNotificationsView() {
-  const notifications = state.orders.filter((order) => order.status === 'Compra cancelada');
+  const notices = [
+    ...state.customerNotifications.map((notification) => ({
+      id: `message-${notification.id}`,
+      orderNumber: notification.orderNumber,
+      createdAt: notification.created_at,
+      title: 'Mensagem da loja',
+      message: notification.message,
+    })),
+    ...state.orders.filter((order) => order.status === 'Compra cancelada').map((order) => ({
+      id: `cancelled-${order.id}`,
+      orderNumber: order.number,
+      createdAt: order.cancelledAt || order.createdAt,
+      title: 'Compra cancelada',
+      message: order.cancellationMessage || 'A loja cancelou esta compra.',
+      refundAmount: order.refundAmount,
+    })),
+  ].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   return `
     <section class="store-view" aria-labelledby="view-title">
       <div class="view-heading"><div><p class="eyebrow eyebrow-muted">Sua conta</p><h1 id="view-title">Notificações</h1><p>Avisos enviados pela loja sobre seus pedidos.</p></div></div>
-      ${notifications.length ? `<div class="notification-list">${notifications.map((order) => `
+      ${notices.length ? `<div class="notification-list">${notices.map((notice) => `
         <article class="order-cancellation-notice">
-          <p class="eyebrow eyebrow-muted">Pedido ${escapeHtml(order.number)} · ${new Date(order.cancelledAt || order.createdAt).toLocaleString('pt-BR')}</p>
-          <h2>Compra cancelada</h2>
-          <p>${escapeHtml(order.cancellationMessage || 'A loja cancelou esta compra.')}</p>
-          ${order.refundAmount !== null ? `<p>Valor para devolução: <strong>${formatPrice(order.refundAmount)}</strong>. A devolução é feita manualmente pela loja.</p>` : ''}
+          <p class="eyebrow eyebrow-muted">Pedido ${escapeHtml(notice.orderNumber)} · ${new Date(notice.createdAt).toLocaleString('pt-BR')}</p>
+          <h2>${escapeHtml(notice.title)}</h2>
+          <p>${escapeHtml(notice.message)}</p>
+          ${notice.refundAmount !== undefined && notice.refundAmount !== null ? `<p>Valor para devolução: <strong>${formatPrice(notice.refundAmount)}</strong>. A devolução é feita manualmente pela loja.</p>` : ''}
           <button type="button" class="text-button" data-view="orders">Ver pedido</button>
         </article>
       `).join('')}</div>` : '<div class="empty-search orders-empty"><h3>Nenhuma notificação</h3><p>Os avisos da loja aparecerão aqui.</p></div>'}
@@ -1426,6 +1675,7 @@ function renderCurrentView(firstName) {
   if (state.view === 'orders') return renderOrdersView();
   if (state.view === 'notifications') return renderNotificationsView();
   if (state.view === 'admin-orders' && state.isStoreAdmin) return renderAdminOrdersView();
+  if (state.view === 'admin-stock' && state.isStoreAdmin) return renderAdminStockView();
   if (state.view === 'profile') return renderProfileView();
   if (state.view === 'settings') return renderSettingsView();
   return renderSupportView();
@@ -1471,8 +1721,9 @@ function renderStore() {
           <button type="button" class="sidebar-link${state.view === 'categories' ? ' is-active' : ''}" data-view="categories"><span aria-hidden="true">▦</span><span>Categorias</span><b aria-hidden="true">${state.view === 'categories' ? '⌄' : '›'}</b></button>
           ${state.view === 'categories' ? `<div class="sidebar-category-list">${categories.map((category) => `<button type="button" class="sidebar-category${state.selectedCategory === category.id ? ' is-active' : ''}" data-category-choose="${category.id}">${escapeHtml(category.name)}</button>`).join('')}</div>` : ''}
           <button type="button" class="sidebar-link${state.view === 'orders' ? ' is-active' : ''}" data-view="orders"><span aria-hidden="true">▣</span><span>Pedidos</span><b class="sidebar-badge">${state.orders.length}</b></button>
-          <button type="button" class="sidebar-link${state.view === 'notifications' ? ' is-active' : ''}" data-view="notifications"><span aria-hidden="true">♢</span><span>Notificações</span>${state.cancellationNotificationCount ? `<b class="sidebar-badge">${state.cancellationNotificationCount}</b>` : ''}</button>
+          <button type="button" class="sidebar-link${state.view === 'notifications' ? ' is-active' : ''}" data-view="notifications"><span aria-hidden="true">♢</span><span>Notificações</span>${state.notificationCount ? `<b class="sidebar-badge">${state.notificationCount}</b>` : ''}</button>
           ${state.isStoreAdmin ? `<button type="button" class="sidebar-link${state.view === 'admin-orders' ? ' is-active' : ''}" data-view="admin-orders"><span aria-hidden="true">✓</span><span>Conferir pagamentos</span></button>` : ''}
+          ${state.isStoreAdmin ? `<button type="button" class="sidebar-link${state.view === 'admin-stock' ? ' is-active' : ''}" data-view="admin-stock"><span aria-hidden="true">▤</span><span>Estoque</span></button>` : ''}
           <button type="button" class="sidebar-link${state.view === 'settings' ? ' is-active' : ''}" data-view="settings"><span aria-hidden="true">⚙</span><span>Configurações</span></button>
           <button type="button" class="sidebar-link${state.view === 'support' ? ' is-active' : ''}" data-view="support"><span aria-hidden="true">?</span><span>Suporte</span></button>
           <button type="button" class="sidebar-link sidebar-logout" id="logout"><span aria-hidden="true">↪</span><span>Sair</span></button>
@@ -1561,6 +1812,7 @@ function renderStore() {
       state.sidebarOpen = false;
       if (state.view === 'orders' || state.view === 'notifications') void loadCustomerOrders();
       if (state.view === 'admin-orders') void loadAdminOrders();
+      if (state.view === 'admin-stock') void loadAdminStock();
       renderStore();
     });
   });
@@ -1636,8 +1888,73 @@ function renderStore() {
       void cancelManualPixOrder(button.dataset.cancelManualPix, message.trim());
     });
   });
+  app.querySelectorAll('[data-toggle-order-edit]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.editingOrderId = state.editingOrderId === button.dataset.toggleOrderEdit
+        ? null
+        : button.dataset.toggleOrderEdit;
+      renderStore();
+    });
+  });
+  app.querySelectorAll('[data-send-order-notification]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const message = window.prompt('Escreva a mensagem que aparecerá nas notificações do cliente (até 1000 caracteres).');
+      if (message === null) return;
+      if (!message.trim() || message.trim().length > 1000) {
+        window.alert('A mensagem deve ter entre 1 e 1000 caracteres.');
+        return;
+      }
+      button.disabled = true;
+      void sendCustomerOrderNotification(button.dataset.sendOrderNotification, message.trim());
+    });
+  });
+  app.querySelectorAll('[data-edit-order]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const values = new FormData(form);
+      const customerName = String(values.get('customerName') || '').trim();
+      const customerPhone = String(values.get('customerPhone') || '').trim();
+      const receiveMethod = String(values.get('receiveMethod') || '');
+      const delivery = receiveMethod === 'station'
+        ? {
+          name: customerName,
+          whatsapp: customerPhone,
+          receiveMethod,
+          station: String(values.get('station') || ''),
+        }
+        : {
+          name: customerName,
+          whatsapp: customerPhone,
+          receiveMethod,
+          street: String(values.get('street') || '').trim(),
+          number: String(values.get('number') || '').trim(),
+          deliveryNote: String(values.get('deliveryNote') || '').trim(),
+        };
+      void updateManualPixOrderDetails(form.dataset.editOrder, customerName, customerPhone, delivery);
+    });
+  });
+  app.querySelectorAll('[data-stock-product]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const values = new FormData(form);
+      const variantInputs = [...form.querySelectorAll('[data-stock-color]')];
+      const stockByColor = Object.fromEntries(variantInputs.map((input) => [
+        input.dataset.stockColor,
+        Math.max(0, Number(values.getAll('variantStock')[variantInputs.indexOf(input)])),
+      ]));
+      const stock = variantInputs.length
+        ? Object.values(stockByColor).reduce((sum, quantity) => sum + quantity, 0)
+        : Math.max(0, Number(values.get('stock')));
+      const saveButton = form.querySelector('[type="submit"]');
+      saveButton.disabled = true;
+      void saveProductStock(form.dataset.stockProduct, stock, stockByColor);
+    });
+  });
   app.querySelector('#refresh-admin-orders')?.addEventListener('click', () => {
     void loadAdminOrders();
+  });
+  app.querySelector('#refresh-admin-stock')?.addEventListener('click', () => {
+    void loadAdminStock();
   });
   app.querySelector('#theme-toggle')?.addEventListener('click', () => {
     state.theme = state.theme === 'dark' ? 'light' : 'dark';

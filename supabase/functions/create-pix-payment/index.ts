@@ -205,7 +205,7 @@ Deno.serve(async (request) => {
   });
   const { data: catalog, error: catalogError } = await admin
     .from('products')
-    .select('id,name,price')
+    .select('id,name,price,stock,stock_by_color')
     .eq('active', true)
     .in('id', [...quantitiesByProduct.keys()]);
   if (catalogError) {
@@ -217,6 +217,7 @@ Deno.serve(async (request) => {
   }
 
   const productsById = new Map(catalog.map((product) => [product.id, product]));
+  const requestedColorStocks = new Map<string, number>();
   const snapshots: Array<{
     product_id: string;
     product_name: string;
@@ -228,6 +229,20 @@ Deno.serve(async (request) => {
   for (const line of lines.values()) {
     const product = productsById.get(line.productId);
     if (!product) return jsonResponse({ error: 'Um produto não está disponível para compra.' }, 400);
+    const colorStocks = product.stock_by_color && typeof product.stock_by_color === 'object'
+      ? product.stock_by_color as Record<string, number>
+      : {};
+    if (Object.keys(colorStocks).length) {
+      if (!line.color || !(line.color in colorStocks)) {
+        return jsonResponse({ error: `Escolha uma variação válida para ${product.name}.` }, 400);
+      }
+      const colorKey = JSON.stringify([line.productId, line.color]);
+      const requested = (requestedColorStocks.get(colorKey) || 0) + line.quantity;
+      if (requested > Number(colorStocks[line.color])) {
+        return jsonResponse({ error: `Estoque insuficiente para ${product.name} (${line.color}).` }, 409);
+      }
+      requestedColorStocks.set(colorKey, requested);
+    }
     snapshots.push({
       product_id: line.productId,
       product_name: product.name,
@@ -236,6 +251,15 @@ Deno.serve(async (request) => {
       color: line.color,
       product_type: line.type,
     });
+  }
+  for (const [productId, requestedQuantity] of quantitiesByProduct) {
+    const product = productsById.get(productId);
+    const colorStocks = product?.stock_by_color && typeof product.stock_by_color === 'object'
+      ? product.stock_by_color as Record<string, number>
+      : {};
+    if (!Object.keys(colorStocks).length && requestedQuantity > Number(product?.stock)) {
+      return jsonResponse({ error: `Estoque insuficiente para ${product?.name || 'um produto'}.` }, 409);
+    }
   }
   const total = Math.round(snapshots.reduce((sum, item) => sum + item.unit_price * item.quantity, 0) * 100) / 100;
   const { data: order, error: orderError } = await admin

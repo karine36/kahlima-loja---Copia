@@ -60,10 +60,40 @@
 .location-review-card p, .location-review-card small { margin: 0; color: #737d71; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
 .checkout-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
 .checkout-actions .button { min-height: 44px; padding: 0 15px; font-size: 12px; }
+.admin-order-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.admin-order-edit-form,
+.admin-stock-row { display: grid; gap: 12px; margin-top: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); }
+.admin-order-edit-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.admin-order-edit-form h3 { grid-column: 1 / -1; margin: 0; color: #344b3c; font: 700 14px var(--serif); }
+.admin-order-edit-form label,
+.admin-stock-row label { display: grid; min-width: 0; gap: 6px; color: #526353; font-size: 11px; font-weight: 700; }
+.admin-order-edit-form input,
+.admin-order-edit-form select,
+.admin-stock-row input { width: 100%; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: #344b3c; font: inherit; font-size: 12px; }
+.admin-delivery-fields { display: grid; grid-column: 1 / -1; grid-template-columns: 2fr 1fr; gap: 10px; }
+.admin-delivery-fields label:last-child { grid-column: 1 / -1; }
+.admin-order-edit-form > button { grid-column: 1 / -1; justify-self: start; }
+.admin-stock-list { display: grid; gap: 10px; }
+.admin-stock-row { grid-template-columns: minmax(140px, 1fr) minmax(100px, .7fr) auto; align-items: end; margin: 0; }
+.admin-stock-product { display: grid; gap: 4px; min-width: 0; padding-bottom: 8px; }
+.admin-stock-product strong { color: #344b3c; font-size: 12px; }
+.admin-stock-product small { color: #858c80; font-size: 10px; }
+.admin-stock-variants { display: flex; flex-wrap: wrap; gap: 10px; }
+.admin-stock-variants label { width: 96px; }
+.admin-stock-row > .button { min-height: 40px; }
+.inventory-shortfall { border-color: #e4c786; background: #fffaf0; color: #675536; }
 @media (max-width: 520px) {
 	.checkout-address-fields { grid-template-columns: minmax(0, 1fr) 105px; gap: 0 10px; }
 	.station-grid { grid-template-columns: 1fr; }
 	.station-option { min-height: 40px; }
+	.admin-order-edit-form { grid-template-columns: 1fr; }
+	.admin-order-edit-form h3,
+	.admin-delivery-fields,
+	.admin-order-edit-form > button { grid-column: 1; }
+	.admin-stock-row { grid-template-columns: 1fr; align-items: stretch; }
+	.admin-stock-product { padding-bottom: 0; }
+	.admin-stock-row > .button { width: 100%; }
+	.admin-order-actions { align-items: flex-start; flex-direction: column; gap: 8px; }
 }
 .payment-options { margin: 0; padding: 0; border: 0; }
 .payment-options legend { margin-bottom: 10px; color: #44564a; font-size: 12px; font-weight: 700; }

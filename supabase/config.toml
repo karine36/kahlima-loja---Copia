@@ -21,7 +21,7 @@ enabled = true
 sql_paths = ["./seed.sql"]
 
 [functions.create-pix-payment]
-verify_jwt = true
+verify_jwt = false
 
 [functions.mercadopago-webhook]
 verify_jwt = false
