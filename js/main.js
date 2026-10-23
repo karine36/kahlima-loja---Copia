@@ -1652,10 +1652,10 @@ function renderSettingsView() {
 function renderSupportView() {
   return `
     <section class="store-view" aria-labelledby="view-title">
-      <div class="view-heading"><div><p class="eyebrow eyebrow-muted">Estamos por aqui</p><h1 id="view-title">Suporte</h1><p>Consulte os canais de atendimento ilustrativos desta versão.</p></div></div>
+      <div class="view-heading"><div><p class="eyebrow eyebrow-muted">Estamos por aqui</p><h1 id="view-title">Suporte</h1><p>Consulte os canais de atendimento para dúvidas e solicitações.</p></div></div>
       <div class="support-options">
-        <div class="support-option"><span aria-hidden="true">☏</span><div><small>Telefone / WhatsApp</small><strong>(11) 4002-8922</strong><p>Canal de exemplo · indisponível para contato</p></div></div>
-        <div class="support-option"><span aria-hidden="true">@</span><div><small>E-mail</small><strong>suporte@kahlimavendas.example</strong><p>Endereço ilustrativo · indisponível para contato</p></div></div>
+        <div class="support-option"><span aria-hidden="true">☏</span><div><small>Telefone / WhatsApp</small><strong>(11) 95983-9395 </strong><p>Canal de exemplo · disponível para contato</p></div></div>
+        <div class="support-option"><span aria-hidden="true">@</span><div><small>E-mail</small><strong>kah0368270@gmail.com</strong><p>Endereço ilustrativo · disponível para contato</p></div></div>
       </div>
     </section>
   `;
