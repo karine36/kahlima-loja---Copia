@@ -113,8 +113,14 @@
 .admin-presence-customer { display: grid; min-width: 0; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); }
 .admin-presence-avatar { width: 42px; height: 42px; }
 .admin-presence-customer-info { display: grid; min-width: 0; gap: 3px; }
-.admin-presence-customer-info > strong { overflow: hidden; color: #344b3c; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.admin-presence-customer-name { width: fit-content; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: transparent; color: #344b3c; font-size: 12px; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.admin-presence-customer-name:hover { text-decoration: underline; }
 .admin-presence-customer-info > small { overflow: hidden; color: #858c80; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.admin-customer-details-list { display: grid; gap: 0; margin: 20px 0 0; }
+.admin-customer-details-list > div { display: grid; gap: 4px; padding: 12px 0; border-top: 1px solid var(--line); }
+.admin-customer-details-list dt { color: #737d71; font-size: 11px; }
+.admin-customer-details-list dd { margin: 0; color: #344b3c; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.admin-customer-account-note { margin: 8px 0 18px; color: #737d71; font-size: 11px; line-height: 1.55; }
 .admin-presence-status { display: inline-flex; align-items: center; gap: 5px; color: #777f75; font-size: 10px; }
 .admin-presence-status i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #939b91; }
 .admin-presence-status.is-online { color: #287348; font-weight: 700; }
@@ -158,7 +164,16 @@
 .system-notification-product,
 .system-notification-read { padding: 0; border: 0; background: transparent; color: #315a46; font-size: 9px; font-weight: 800; }
 .system-notification-read { color: #7a8177; font-weight: 600; }
-.system-notification-panel { max-height: min(520px, calc(100dvh - 100px)); padding: 13px; }
+.system-notification-panel { max-height: min(520px, calc(100dvh - 100px)); padding: 13px; transform-origin: bottom right; animation: notification-panel-enter .24s cubic-bezier(.2, .75, .25, 1) both; }
+.system-notification-panel.is-closing { pointer-events: none; animation: notification-panel-exit .2s ease both; }
+@keyframes notification-panel-enter {
+  from { opacity: 0; transform: translateY(10px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes notification-panel-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(8px) scale(.97); }
+}
 .system-notification-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 2px 2px 10px; }
 .system-notification-panel-heading .eyebrow { margin: 0 0 3px; }
 .system-notification-panel-heading h2 { margin: 0; color: #344b3c; font: 700 16px var(--serif); }
@@ -175,11 +190,15 @@
 :root[data-theme="dark"] .admin-notification-form > div > p:last-child,
 :root[data-theme="dark"] .admin-presence-heading p:last-child,
 :root[data-theme="dark"] .admin-presence-customer-info > small,
+:root[data-theme="dark"] .admin-customer-details-list dt,
+:root[data-theme="dark"] .admin-customer-account-note,
 :root[data-theme="dark"] .admin-presence-status,
 :root[data-theme="dark"] .system-notification-card p { color: var(--night-muted); }
 :root[data-theme="dark"] .admin-notification-form .field > span { color: var(--night-text); }
 :root[data-theme="dark"] .admin-notification-form :is(input, select, textarea) { border-color: var(--line); background: var(--night-input); color: var(--night-text); }
 :root[data-theme="dark"] .admin-presence-customer { border-color: var(--line); background: var(--night-input); }
+:root[data-theme="dark"] .admin-presence-customer-name,
+:root[data-theme="dark"] .admin-customer-details-list dd { color: var(--night-text); }
 :root[data-theme="dark"] .admin-presence-status.is-online { color: #9cdbad; }
 :root[data-theme="dark"] .admin-presence-status.is-online i { background: #60d487; box-shadow: 0 0 0 3px #60d48724; }
 :root[data-theme="dark"] .system-notification-card.is-unread { background: #26372c; }

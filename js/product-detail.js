@@ -1,9 +1,10 @@
 (function () {
   const { escapeHtml, formatPrice } = window.KahLimaUtils;
 
-  function renderProductDetail(product, available, quantity, selectedVariants, variantStocks, reviewsMarkup, recommendations) {
+  function renderProductDetail(product, available, quantity, selectedVariants, variantStocks, reviewsMarkup, recommendations, selectedImageIndex = 0) {
     const images = (product.images || []).slice(0, 3);
     const heroImageIndex = images.findIndex(Boolean);
+    const initialImageIndex = Math.max(0, Math.min(images.length - 1, Number(selectedImageIndex) || 0));
     const options = window.getKahLimaProductOptions(product);
     const variants = selectedVariants || {};
     const hasColorOptions = options.color.length > 0;
@@ -30,18 +31,18 @@
         </div>
         <section class="product-detail-layout" data-product-detail-id="${escapeHtml(product.id)}">
           <div class="product-detail-gallery">
-            <div class="product-gallery-track" data-gallery-track aria-label="Galeria de ${escapeHtml(product.name)}">
+            <div class="product-gallery-track" data-gallery-track data-initial-gallery-index="${initialImageIndex}" role="region" aria-label="Galeria de ${escapeHtml(product.name)}">
               ${images.map((image, index) => `
                 <div class="product-gallery-slide art-${escapeHtml(product.color)}${image ? '' : ' image-unavailable'}" data-gallery-slide>
                   <div class="product-gallery-fallback" aria-hidden="true"><span class="product-object object-${escapeHtml(product.shape)}"><span></span></span><small>${index + 1} / 3</small></div>
-                  ${image ? `<button type="button" class="product-gallery-zoom" data-zoom-image="${escapeHtml(image)}" data-zoom-alt="${escapeHtml(product.name)} · imagem ${index + 1} de 3" aria-label="Ampliar imagem ${index + 1} de ${escapeHtml(product.name)}"><img src="${escapeHtml(image)}" alt="" loading="${index === heroImageIndex ? 'eager' : 'lazy'}" ${index === heroImageIndex ? 'fetchpriority="high"' : ''} decoding="async" draggable="false"><span class="zoom-image-hint" aria-hidden="true">Ampliar imagem ⤢</span></button>` : ''}
+                  ${image ? `<button type="button" class="product-gallery-zoom" data-zoom-image="${escapeHtml(image)}" data-zoom-alt="${escapeHtml(product.name)} · imagem ${index + 1}" data-gallery-index="${index}" aria-label="Ampliar imagem ${index + 1} de ${escapeHtml(product.name)}"><img src="${escapeHtml(image)}" alt="" loading="${index === heroImageIndex ? 'eager' : 'lazy'}" ${index === heroImageIndex ? 'fetchpriority="high"' : ''} decoding="async" draggable="false"><span class="zoom-image-hint" aria-hidden="true">Ampliar imagem ⤢</span></button>` : ''}
                 </div>
               `).join('')}
             </div>
             <button type="button" class="gallery-arrow gallery-prev" data-gallery-prev aria-label="Imagem anterior">‹</button>
             <button type="button" class="gallery-arrow gallery-next" data-gallery-next aria-label="Próxima imagem">›</button>
-            <div class="product-gallery-dots" aria-label="Selecionar imagem">
-              ${images.map((image, index) => `<button type="button" data-gallery-index="${index}" aria-label="Mostrar imagem ${index + 1}"${index === 0 ? ' aria-current="true"' : ''}></button>`).join('')}
+            <div class="product-gallery-thumbnails" role="group" aria-label="Selecionar imagem">
+              ${images.map((image, index) => `<button type="button" class="product-gallery-thumbnail" data-gallery-index="${index}" aria-label="Mostrar imagem ${index + 1} de ${escapeHtml(product.name)}"${index === initialImageIndex ? ' aria-current="true"' : ''}>${image ? `<img src="${escapeHtml(image)}" alt="" loading="${index === initialImageIndex ? 'eager' : 'lazy'}" decoding="async" draggable="false">` : `<span aria-hidden="true">${index + 1}</span>`}</button>`).join('')}
             </div>
           </div>
           <div class="product-detail-copy">
@@ -80,9 +81,22 @@
         </details>
         ${reviewsMarkup || ''}
         ${renderRecommendations(recommendations || [])}
-        <dialog class="product-image-lightbox" data-image-lightbox aria-label="Imagem ampliada do produto">
-          <button type="button" class="product-image-lightbox-close" data-close-lightbox aria-label="Fechar imagem ampliada">×</button>
-          <img data-lightbox-image alt="">
+        <dialog class="product-image-lightbox" data-image-lightbox aria-labelledby="product-image-lightbox-title">
+          <div class="product-image-lightbox-panel">
+            <header class="product-image-lightbox-header">
+              <div><span class="product-image-lightbox-eyebrow">GALERIA DO PRODUTO</span><h2 id="product-image-lightbox-title">${escapeHtml(product.name)}</h2></div>
+              <button type="button" class="product-image-lightbox-dismiss" data-close-lightbox aria-label="Fechar imagem ampliada"><span aria-hidden="true">×</span></button>
+            </header>
+            <div class="product-image-lightbox-stage">
+              <button type="button" class="product-image-lightbox-arrow" data-lightbox-prev aria-label="Imagem anterior"><span aria-hidden="true">‹</span></button>
+              <img data-lightbox-image alt="">
+              <button type="button" class="product-image-lightbox-arrow" data-lightbox-next aria-label="Próxima imagem"><span aria-hidden="true">›</span></button>
+            </div>
+            <footer class="product-image-lightbox-footer">
+              <span class="product-image-lightbox-position" data-lightbox-position aria-live="polite"></span>
+              <span class="product-image-lightbox-hint">Use as setas do teclado para navegar</span>
+            </footer>
+          </div>
         </dialog>
         ${(hasColorOptions || hasTypeOptions) ? `<dialog class="product-variant-picker" data-variant-picker aria-labelledby="variant-picker-title">
           <div class="product-variant-picker-heading">
@@ -124,48 +138,87 @@
     `;
   }
 
-  function bindProductDetail(root) {
+  function bindProductDetail(root, onIndexChange = () => {}) {
     const track = root.querySelector('[data-gallery-track]');
     if (!track) return;
 
-    let currentIndex = 0;
-  let pointerStart = null;
+    let currentIndex = Number(track.dataset.initialGalleryIndex) || 0;
+    let pointerStart = null;
+    let scrollEndTimeout;
     const slides = [...track.querySelectorAll('[data-gallery-slide]')];
     const dots = [...root.querySelectorAll('[data-gallery-index]')];
+    const previousButton = root.querySelector('[data-gallery-prev]');
+    const nextButton = root.querySelector('[data-gallery-next]');
 
-    const goTo = (index) => {
-      currentIndex = Math.max(0, Math.min(slides.length - 1, index));
-      track.scrollTo({ left: currentIndex * track.clientWidth, behavior: 'smooth' });
+    const updateControls = () => {
+      slides.forEach((slide, slideIndex) => {
+        slide.classList.toggle('is-current', slideIndex === currentIndex);
+      });
       dots.forEach((dot, dotIndex) => {
         if (dotIndex === currentIndex) dot.setAttribute('aria-current', 'true');
         else dot.removeAttribute('aria-current');
       });
+      if (previousButton) previousButton.disabled = currentIndex === 0;
+      if (nextButton) nextButton.disabled = currentIndex === slides.length - 1;
     };
 
-    root.querySelector('[data-gallery-prev]')?.addEventListener('click', () => goTo(currentIndex - 1));
-    root.querySelector('[data-gallery-next]')?.addEventListener('click', () => goTo(currentIndex + 1));
+    const updateCurrentIndex = () => {
+      if (!track.isConnected || !track.clientWidth) return;
+      currentIndex = Math.max(0, Math.min(slides.length - 1, Math.round(track.scrollLeft / track.clientWidth)));
+      updateControls();
+      onIndexChange?.(currentIndex);
+    };
+
+    const goTo = (index) => {
+      currentIndex = Math.max(0, Math.min(slides.length - 1, index));
+      updateControls();
+      onIndexChange?.(currentIndex);
+      track.scrollLeft = currentIndex * track.clientWidth;
+    };
+
+    if (currentIndex > 0) track.scrollLeft = currentIndex * track.clientWidth;
+    updateControls();
+    previousButton?.addEventListener('click', () => goTo(currentIndex - 1));
+    nextButton?.addEventListener('click', () => goTo(currentIndex + 1));
     dots.forEach((dot) => dot.addEventListener('click', () => goTo(Number(dot.dataset.galleryIndex))));
     track.addEventListener('scroll', () => {
-      const index = Math.round(track.scrollLeft / track.clientWidth);
-      if (index !== currentIndex) {
-        currentIndex = index;
-        dots.forEach((dot, dotIndex) => {
-          if (dotIndex === currentIndex) dot.setAttribute('aria-current', 'true');
-          else dot.removeAttribute('aria-current');
-        });
-      }
+      window.clearTimeout(scrollEndTimeout);
+      scrollEndTimeout = window.setTimeout(() => {
+        updateCurrentIndex();
+      }, 120);
     }, { passive: true });
     track.addEventListener('pointerdown', (event) => {
-      pointerStart = { x: event.clientX, scrollLeft: track.scrollLeft };
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      pointerStart = {
+        x: event.clientX,
+        scrollLeft: track.scrollLeft,
+        pointerId: event.pointerId,
+        moved: false,
+      };
     });
     track.addEventListener('pointermove', (event) => {
-      if (!pointerStart) return;
+      if (!pointerStart || event.pointerId !== pointerStart.pointerId) return;
       const distance = event.clientX - pointerStart.x;
-      if (Math.abs(distance) > 5) event.preventDefault();
+      if (Math.abs(distance) <= 5) return;
+      pointerStart.moved = true;
+      if (typeof track.setPointerCapture === 'function' && !track.hasPointerCapture(event.pointerId)) {
+        track.setPointerCapture(event.pointerId);
+      }
+      event.preventDefault();
       track.scrollLeft = pointerStart.scrollLeft - distance;
     });
-    track.addEventListener('pointerup', () => { pointerStart = null; });
-    track.addEventListener('pointercancel', () => { pointerStart = null; });
+    const finishPointer = (event) => {
+      if (pointerStart?.pointerId !== event.pointerId) return;
+      const didMove = pointerStart.moved;
+      pointerStart = null;
+      if (didMove) {
+        window.clearTimeout(scrollEndTimeout);
+        updateCurrentIndex();
+      }
+    };
+    track.addEventListener('pointerup', finishPointer);
+    track.addEventListener('pointercancel', finishPointer);
+    track.addEventListener('lostpointercapture', finishPointer);
     root.querySelectorAll('.product-gallery-slide img').forEach((image) => {
       image.addEventListener('error', () => {
         image.closest('.product-gallery-slide').classList.add('image-unavailable');
@@ -181,14 +234,41 @@
     const lightbox = root.querySelector('[data-image-lightbox]');
     const lightboxImage = lightbox.querySelector('[data-lightbox-image]');
     const closeLightbox = () => lightbox.close();
-    root.querySelectorAll('[data-zoom-image]').forEach((button) => {
+    const lightboxPosition = lightbox.querySelector('[data-lightbox-position]');
+    const lightboxPrevious = lightbox.querySelector('[data-lightbox-prev]');
+    const lightboxNext = lightbox.querySelector('[data-lightbox-next]');
+    const zoomButtons = [...root.querySelectorAll('[data-zoom-image]')];
+    let lightboxIndex = 0;
+    const showLightboxImage = (index) => {
+      if (!zoomButtons.length) return;
+      lightboxIndex = (index + zoomButtons.length) % zoomButtons.length;
+      const button = zoomButtons[lightboxIndex];
+      lightboxImage.src = button.dataset.zoomImage;
+      lightboxImage.alt = button.dataset.zoomAlt;
+      lightboxPosition.textContent = `${lightboxIndex + 1} / ${zoomButtons.length}`;
+      goTo(Number(button.dataset.galleryIndex));
+    };
+
+    lightboxPrevious.disabled = zoomButtons.length < 2;
+    lightboxNext.disabled = zoomButtons.length < 2;
+    zoomButtons.forEach((button, index) => {
       button.addEventListener('click', () => {
-        lightboxImage.src = button.dataset.zoomImage;
-        lightboxImage.alt = button.dataset.zoomAlt;
+        showLightboxImage(index);
         lightbox.showModal();
       });
     });
     lightbox.querySelector('[data-close-lightbox]').addEventListener('click', closeLightbox);
+    lightboxPrevious.addEventListener('click', () => showLightboxImage(lightboxIndex - 1));
+    lightboxNext.addEventListener('click', () => showLightboxImage(lightboxIndex + 1));
+    lightbox.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        showLightboxImage(lightboxIndex - 1);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        showLightboxImage(lightboxIndex + 1);
+      }
+    });
     lightbox.addEventListener('click', (event) => {
       if (event.target === lightbox) closeLightbox();
     });

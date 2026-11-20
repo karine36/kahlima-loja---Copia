@@ -164,6 +164,11 @@ const state = {
   adminCustomerPresenceError: '',
   adminCustomerPhotoError: '',
   adminCustomerPhotoUrlCache: new Map(),
+  adminCustomerDetailsUserId: null,
+  adminCustomerDetails: null,
+  adminCustomerDetailsLoading: false,
+  adminCustomerDetailsError: '',
+  adminCustomerDetailsRequestId: 0,
   profileSaving: false,
   storePresenceTouchPending: false,
   adminNotificationPublishError: '',
@@ -178,6 +183,7 @@ const state = {
   profileOpen: false,
   profileError: '',
   productDetailId: null,
+  productGalleryIndex: 0,
   selectedProductVariants: null,
   variantPickerAction: '',
   checkoutStep: null,
@@ -224,6 +230,11 @@ function setAuthenticatedUser(user, { preserveAuthRoute = false, showStoreOpenin
     state.notificationPanelOpen = false;
     state.adminNotificationRecipients = [];
     state.adminCustomerPresence = [];
+    state.adminCustomerDetailsUserId = null;
+    state.adminCustomerDetails = null;
+    state.adminCustomerDetailsLoading = false;
+    state.adminCustomerDetailsError = '';
+    state.adminCustomerDetailsRequestId += 1;
     state.adminCustomerPhotoUrlCache = new Map();
     state.adminNotificationPublishError = '';
     state.adminNotificationPublishNotice = '';
@@ -430,6 +441,65 @@ async function loadAdminCustomerPresence() {
     state.adminCustomerPresenceLoading = false;
   }
   if (state.userId === userId && state.isStoreAdmin && state.view === 'admin-support') renderStore();
+}
+
+async function loadAdminCustomerDetails(customerId) {
+  const supabase = window.KahLimaSupabase?.client;
+  if (!supabase || !state.isStoreAdmin || !customerId) return;
+  const adminUserId = state.userId;
+  const requestId = state.adminCustomerDetailsRequestId + 1;
+  state.adminCustomerDetailsRequestId = requestId;
+  state.adminCustomerDetailsUserId = customerId;
+  state.adminCustomerDetails = null;
+  state.adminCustomerDetailsLoading = true;
+  state.adminCustomerDetailsError = '';
+  renderStore();
+  app.querySelector('#admin-customer-details-title')?.focus();
+  const isCurrentRequest = () => (
+    state.adminCustomerDetailsRequestId === requestId
+    && state.adminCustomerDetailsUserId === customerId
+    && state.userId === adminUserId
+    && state.isStoreAdmin
+    && state.view === 'admin-support'
+  );
+  try {
+    const { data, error } = await supabase.rpc('get_store_customer_account_details', {
+      p_user_id: customerId,
+    });
+    if (error) throw error;
+    const customer = Array.isArray(data) ? data[0] : data;
+    if (!isCurrentRequest()) return;
+    if (!customer) {
+      state.adminCustomerDetailsError = 'Não foi possível encontrar os dados desta conta.';
+      return;
+    }
+    state.adminCustomerDetails = customer;
+  } catch (error) {
+    console.error('Could not load customer account details for the store admin.', error);
+    if (isCurrentRequest()) {
+      state.adminCustomerDetailsError = 'Não foi possível carregar os dados desta conta.';
+    }
+  } finally {
+    if (isCurrentRequest()) {
+      state.adminCustomerDetailsLoading = false;
+      renderStore();
+      app.querySelector('#admin-customer-details-title')?.focus();
+    }
+  }
+}
+
+function closeAdminCustomerDetails() {
+  if (!state.adminCustomerDetailsUserId) return;
+  const customerId = state.adminCustomerDetailsUserId;
+  state.adminCustomerDetailsRequestId += 1;
+  state.adminCustomerDetailsUserId = null;
+  state.adminCustomerDetails = null;
+  state.adminCustomerDetailsLoading = false;
+  state.adminCustomerDetailsError = '';
+  renderStore();
+  [...app.querySelectorAll('[data-customer-details]')]
+    .find((button) => button.dataset.customerDetails === customerId)
+    ?.focus();
 }
 
 async function loadProfilePhoto(userId) {
@@ -1790,6 +1860,26 @@ function renderStoreNotificationWidget() {
   `;
 }
 
+function closeSystemNotificationPanel() {
+  const panel = app.querySelector('.system-notification-panel');
+  if (!state.notificationPanelOpen || !panel || panel.classList.contains('is-closing')) return;
+
+  let fallbackTimer;
+  const finishClose = (event) => {
+    if (event && (event.target !== panel || event.animationName !== 'notification-panel-exit')) return;
+    panel.removeEventListener('animationend', finishClose);
+    window.clearTimeout(fallbackTimer);
+    if (!state.notificationPanelOpen) return;
+    state.notificationPanelOpen = false;
+    renderStore();
+    app.querySelector('[data-toggle-system-notifications]')?.focus();
+  };
+
+  panel.addEventListener('animationend', finishClose);
+  panel.classList.add('is-closing');
+  fallbackTimer = window.setTimeout(() => finishClose(), 300);
+}
+
 function renderProfileView() {
   return `
     <section class="store-view" aria-labelledby="view-title">
@@ -1981,6 +2071,7 @@ function renderStore() {
             selectedProductVariantStocks,
             reviewsMarkup,
             getRelatedProducts(selectedProduct),
+            state.productGalleryIndex,
           ] : null)}
         </main>
 
@@ -2107,6 +2198,13 @@ function renderStore() {
   app.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', () => {
       state.view = button.dataset.view;
+      if (state.view !== 'admin-support' && state.adminCustomerDetailsUserId) {
+        state.adminCustomerDetailsRequestId += 1;
+        state.adminCustomerDetailsUserId = null;
+        state.adminCustomerDetails = null;
+        state.adminCustomerDetailsLoading = false;
+        state.adminCustomerDetailsError = '';
+      }
       state.selectedCategory = null;
       state.search = '';
       state.selectedOrder = null;
@@ -2149,10 +2247,13 @@ function renderStore() {
   });
   app.querySelectorAll('[data-toggle-system-notifications]').forEach((button) => {
     button.addEventListener('click', () => {
-      state.notificationPanelOpen = !state.notificationPanelOpen;
+      if (state.notificationPanelOpen) {
+        closeSystemNotificationPanel();
+        return;
+      }
+      state.notificationPanelOpen = true;
       renderStore();
-      if (state.notificationPanelOpen) app.querySelector('.system-notification-close')?.focus();
-      else app.querySelector('[data-toggle-system-notifications]')?.focus();
+      app.querySelector('.system-notification-close')?.focus();
     });
   });
   app.querySelectorAll('[data-mark-store-notification]').forEach((button) => {
@@ -2317,6 +2418,17 @@ function renderStore() {
       form.querySelector('[name="title"]')?.focus();
       form.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
+  });
+  app.querySelectorAll('[data-customer-details]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void loadAdminCustomerDetails(button.dataset.customerDetails);
+    });
+  });
+  app.querySelectorAll('[data-close-customer-details]').forEach((button) => {
+    button.addEventListener('click', closeAdminCustomerDetails);
+  });
+  app.querySelector('[data-customer-details-overlay]')?.addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) closeAdminCustomerDetails();
   });
   app.querySelector('#refresh-admin-stock')?.addEventListener('click', () => {
     void loadAdminStock();
@@ -2650,6 +2762,7 @@ function renderStore() {
       const productId = button.dataset.openProduct;
       state.notificationPanelOpen = false;
       state.productDetailId = productId;
+      state.productGalleryIndex = 0;
       state.selectedProductVariants = { color: '', type: '' };
       window.scrollTo(0, 0);
       goTo(`#produto/${encodeURIComponent(productId)}`);
@@ -2663,6 +2776,7 @@ function renderStore() {
     app.querySelector('[data-variant-picker][open]')?.close();
     state.variantPickerAction = '';
     state.productDetailId = null;
+    state.productGalleryIndex = 0;
     state.selectedProductVariants = null;
     state.productReviewsForId = null;
     state.productReviews = [];
@@ -2817,7 +2931,9 @@ function renderStore() {
       });
     });
   });
-  bindProductDetail(app);
+  bindProductDetail(app, (index) => {
+    if (selectedProduct && state.productDetailId === selectedProduct.id) state.productGalleryIndex = index;
+  });
 
 }
 
@@ -2852,6 +2968,7 @@ function render() {
     }
     if (state.productDetailId !== productId) {
       state.productDetailId = productId;
+      state.productGalleryIndex = 0;
       state.selectedProductVariants = { color: '', type: '' };
       state.productReviewsForId = null;
     }
@@ -2863,6 +2980,7 @@ function render() {
   if (hash === '' || hash === storePath) {
     if (state.productDetailId || state.view === 'cart') {
       state.productDetailId = null;
+      state.productGalleryIndex = 0;
       state.selectedProductVariants = null;
       state.view = 'home';
     }
@@ -2953,11 +3071,11 @@ window.addEventListener('keydown', (event) => {
     renderStore();
     app.querySelector('[data-sidebar-toggle]')?.focus();
   } else if (event.key === 'Escape' && state.notificationPanelOpen) {
-    state.notificationPanelOpen = false;
-    renderStore();
-    app.querySelector('[data-toggle-system-notifications]')?.focus();
+    closeSystemNotificationPanel();
   } else if (event.key === 'Escape' && state.profileOpen) {
     closeProfileDialog();
+  } else if (event.key === 'Escape' && state.adminCustomerDetailsUserId) {
+    closeAdminCustomerDetails();
   } else if (event.key === 'Escape' && app.querySelector('[data-image-lightbox][open]')) {
     app.querySelector('[data-image-lightbox][open]').close();
     return;

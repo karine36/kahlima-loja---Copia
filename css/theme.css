@@ -183,6 +183,7 @@
 :root[data-theme="dark"] .sidebar-drawer-close { color: var(--night-text); }
 :root[data-theme="dark"] .cart-icon,
 :root[data-theme="dark"] .total-row { background: var(--night-soft); color: var(--night-text); }
+:root[data-theme="dark"] .profile-avatar { border: 1px solid #536b55; background: var(--night-soft); color: #e4efdf; }
 :root[data-theme="dark"] .demo-cart-note { background: #303e34; color: #cad8c8; }
 :root[data-theme="dark"] .cart-items,
 :root[data-theme="dark"] .cart-item,

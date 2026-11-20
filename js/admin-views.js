@@ -1,5 +1,5 @@
 (() => {
-  const { escapeHtml, formatPrice, digitsOnly, avatarMarkup } = window.KahLimaUtils;
+  const { escapeHtml, formatPrice, digitsOnly, formatCpf, avatarMarkup } = window.KahLimaUtils;
 
   function renderDashboard(state) {
     const report = state.adminDashboard;
@@ -40,6 +40,8 @@
       `${customer.name} ${customer.phone}`.toLowerCase().includes(state.adminSupportSearch.toLowerCase()));
     const presenceCustomers = state.adminCustomerPresence.filter((customer) =>
       `${customer.customer_name} ${customer.customer_phone}`.toLowerCase().includes(state.adminSupportSearch.toLowerCase()));
+    const detailsCustomer = state.adminCustomerPresence.find((customer) =>
+      customer.user_id === state.adminCustomerDetailsUserId);
     const onlineCount = state.adminCustomerPresence.filter((customer) => {
       const lastSeen = Date.parse(customer.last_seen_at || '');
       return Number.isFinite(lastSeen) && Date.now() - lastSeen <= 120000;
@@ -94,7 +96,7 @@
                   <article class="admin-presence-customer">
                     ${avatarMarkup({ name: customer.customer_name || 'Cliente', photoUrl: customer.photoUrl || '' }, 'admin-presence-avatar')}
                     <div class="admin-presence-customer-info">
-                      <strong>${escapeHtml(customer.customer_name || 'Cliente')}</strong>
+                      <button type="button" class="admin-presence-customer-name" data-customer-details="${escapeHtml(customer.user_id)}" aria-haspopup="dialog">${escapeHtml(customer.customer_name || 'Cliente')}</button>
                       <span class="admin-presence-status${isOnline ? ' is-online' : ''}"><i aria-hidden="true"></i>${activityLabel}</span>
                       ${customer.customer_phone ? `<small>${escapeHtml(customer.customer_phone)}</small>` : ''}
                     </div>
@@ -135,6 +137,28 @@
             }).join('')}
           </div>
         ` : '<div class="empty-search orders-empty"><h3>Nenhum cliente encontrado</h3><p>Pedidos Pix registrados aparecerão nesta área.</p></div>'}
+        ${state.adminCustomerDetailsUserId ? `
+          <div class="profile-overlay admin-customer-details-overlay" data-customer-details-overlay>
+            <section class="profile-dialog admin-customer-details-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-customer-details-title">
+              <div class="profile-dialog-heading">
+                <div><p class="eyebrow eyebrow-muted">Dados da conta</p><h2 id="admin-customer-details-title" tabindex="-1">${escapeHtml(state.adminCustomerDetails?.customer_name || detailsCustomer?.customer_name || 'Dados do cliente')}</h2></div>
+                <button type="button" class="profile-close" data-close-customer-details aria-label="Fechar dados do cliente">×</button>
+              </div>
+              ${state.adminCustomerDetailsLoading ? '<p class="review-status" role="status">Carregando dados da conta...</p>' : ''}
+              ${state.adminCustomerDetailsError ? `<p class="form-error" role="alert">${escapeHtml(state.adminCustomerDetailsError)}</p>` : ''}
+              ${state.adminCustomerDetails ? `
+                <dl class="admin-customer-details-list">
+                  <div><dt>Nome</dt><dd>${escapeHtml(state.adminCustomerDetails.customer_name || 'Não informado')}</dd></div>
+                  <div><dt>E-mail de acesso</dt><dd>${escapeHtml(state.adminCustomerDetails.customer_email || 'Não informado')}</dd></div>
+                  <div><dt>CPF</dt><dd>${escapeHtml(formatCpf(state.adminCustomerDetails.customer_cpf || '') || 'Não informado')}</dd></div>
+                  <div><dt>Telefone</dt><dd>${escapeHtml(state.adminCustomerDetails.customer_phone || 'Não informado')}</dd></div>
+                </dl>
+                <p class="admin-customer-account-note">A senha não pode ser consultada. Para recuperar o acesso, o cliente precisa usar a opção “Esqueci minha senha” na tela de entrada.</p>
+              ` : ''}
+              <div class="profile-buttons"><button type="button" class="button button-cancel" data-close-customer-details>Fechar</button></div>
+            </section>
+          </div>
+        ` : ''}
       </section>
     `;
   }
