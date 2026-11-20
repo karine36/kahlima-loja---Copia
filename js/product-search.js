@@ -3,12 +3,23 @@
     return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
 
-  function findProductsById(products, query) {
-    if (!String(query || '').trim()) return products;
-    const normalizedQuery = normalizeProductId(query);
-    if (!normalizedQuery) return [];
-    return products.filter((product) => normalizeProductId(product.id) === normalizedQuery);
+  function normalizeProductName(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase()
+      .trim();
   }
 
-  window.KahLimaProductSearch = { findProductsById };
+  function findProducts(products, query) {
+    if (!String(query || '').trim()) return products;
+    const normalizedIdQuery = normalizeProductId(query);
+    const normalizedNameQuery = normalizeProductName(query);
+    return products.filter((product) =>
+      (normalizedIdQuery && normalizeProductId(product.id).includes(normalizedIdQuery))
+      || normalizeProductName(product.name).includes(normalizedNameQuery)
+    );
+  }
+
+  window.KahLimaProductSearch = { findProducts };
 })();

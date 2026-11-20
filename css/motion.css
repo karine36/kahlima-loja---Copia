@@ -78,8 +78,8 @@
 }
 
 @keyframes card-enter {
-	from { opacity: 0; transform: translateY(10px) scale(.99); }
-	to { opacity: 1; transform: translateY(0) scale(1); }
+	from { opacity: 0; }
+	to { opacity: 1; }
 }
 
 @keyframes option-pick {
@@ -122,6 +122,30 @@
 .store-welcome .welcome-orbit { animation: orbit-drift 11s ease-in-out infinite; }
 .store-welcome .welcome-orbit-two { animation-delay: -4s; animation-direction: reverse; }
 
+.store-opening { animation: store-opening-exit 2.3s cubic-bezier(.4, 0, .2, 1) both; }
+.store-opening-card { animation: store-opening-card-enter .45s cubic-bezier(.2, .75, .25, 1) both; }
+.store-opening-mark { animation: store-opening-mark-enter .55s cubic-bezier(.2, .9, .25, 1.2) both; }
+.store-opening-spinner { animation: store-opening-spin .8s linear infinite; }
+.store-opening-progress::after { animation: store-opening-progress 1.85s cubic-bezier(.3, .7, .25, 1) both; }
+
+@keyframes store-opening-exit {
+	0%, 80% { opacity: 1; visibility: visible; }
+	100% { opacity: 0; visibility: hidden; }
+}
+
+@keyframes store-opening-card-enter {
+	from { opacity: 0; transform: translateY(14px) scale(.97); }
+	to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes store-opening-mark-enter {
+	from { opacity: 0; transform: scale(.65) rotate(-12deg); }
+	to { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes store-opening-spin { to { transform: rotate(360deg); } }
+@keyframes store-opening-progress { from { transform: translateX(-105%); } to { transform: translateX(0); } }
+
 .store-main.is-entering > * { animation: content-enter .42s cubic-bezier(.2, .75, .25, 1) both; }
 .store-main.is-entering .product-card,
 .store-main.is-entering .category-tile,
@@ -161,6 +185,11 @@
 	to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+@keyframes presence-pulse {
+	0% { box-shadow: 0 0 0 0 #31ae6355; }
+	70%, 100% { box-shadow: 0 0 0 5px #31ae6300; }
+}
+
 .product-card,
 .category-tile,
 .order-row,
@@ -184,7 +213,7 @@
 .quantity-control button:active,
 .cart-quantity button:active { transform: scale(.88); }
 .gallery-arrow:active,
-.product-detail-close:active,
+.product-detail-back:active,
 .product-image-lightbox-close:active { transform: scale(.94); }
 .cart-link-count { transition: transform .2s ease, background-color .28s ease; }
 .cart-link:active .cart-link-count { transform: scale(.9); }
@@ -215,8 +244,8 @@
 }
 
 @keyframes mobile-card-enter {
-	from { opacity: 0; transform: translateY(7px); }
-	to { opacity: 1; transform: translateY(0); }
+	from { opacity: 0; }
+	to { opacity: 1; }
 }
 
 @media (hover: none) {

@@ -9,12 +9,16 @@ window.KahLimaCategories = [
 
 window.KahLimaProductOptions = {
   color: ['Preto', 'Branco', 'Azul', 'Vermelho', 'Verde', 'Amarelo', 'Rosa', 'Roxo', 'Laranja', 'Cinza'],
-  type: ['Padrão'],
+  type: [],
 };
 
-// Omitir options usa as opções padrão; [] remove essa opção apenas do produto.
+// Cores com estoque por variação definem as opções disponíveis; [] desativa a variação.
 window.getKahLimaProductOptions = (product) => ({
-  color: product.options?.color ?? window.KahLimaProductOptions.color,
+  color: product.stockByColor
+    ? Object.keys(product.stockByColor).filter((color) =>
+      Number(product.stockByColor[color]) > 0
+      && (product.options?.color ?? window.KahLimaProductOptions.color).includes(color))
+    : product.options?.color ?? window.KahLimaProductOptions.color,
   type: product.options?.type ?? window.KahLimaProductOptions.type,
 });
 

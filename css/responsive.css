@@ -18,6 +18,7 @@
   .store-welcome h1 { font-size: 32px; }
   .shop-layout { grid-template-columns: 1fr; gap: 23px; margin-top: 26px; }
   .cart-panel { position: static; max-height: none; overflow: visible; }
+  .shop-layout > .cart-panel:not(.cart-page-panel) { display: none; }
   .checkout { margin-top: 24px; }
   .checkout-layout { grid-template-columns: 1fr; }
   .checkout-summary { position: static; }
@@ -25,9 +26,24 @@
 }
 @media (max-width: 520px) {
   .catalog-heading { align-items: stretch; flex-direction: column; }
+  .home-offers { min-height: 58px; }
+  .home-offers-heading { min-width: 142px; gap: 7px; padding-inline: 10px; }
+  .home-offers-spark { width: 26px; height: 26px; font-size: 15px; }
+  .home-offers-heading strong { font-size: 8px; letter-spacing: .08em; }
+  .home-offers-heading small { max-width: 103px; overflow: hidden; font-size: 7px; text-overflow: ellipsis; }
+  .home-offer-item { min-height: 58px; gap: 7px; padding-inline: 12px; }
+  .home-offer-name { max-width: 132px; font-size: 9px; }
+  .home-offer-price small { font-size: 6px; }
+  .home-offer-price strong { font-size: 12px; }
+  .home-offer-arrow { width: 21px; height: 21px; font-size: 11px; }
   .search-field { width: 100%; }
   .product-grid { grid-template-columns: 1fr; }
-  .product-art { height: 165px; }
+  .product-grid { gap: 15px; }
+  .product-art { height: 190px; }
+  .product-info { padding: 16px; }
+  .product-title-row h3 { font-size: 17px; }
+  .product-title-row p { font-size: 12px; }
+  .product-title-row > strong { font-size: 17px; }
   .brand { font-size: 15px; }
   .store-nav { gap: 8px; }
   .button-logout { padding: 0 10px; }
@@ -44,5 +60,3 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
-
-

@@ -1,7 +1,8 @@
 # Supabase, pedidos e Mercado Pago
 
-A autenticação de clientes usa o Supabase Auth. A tabela `profiles` guarda apenas o
-nome e o telefone; e-mails e senhas ficam sob responsabilidade do Supabase Auth.
+A autenticação de clientes usa o Supabase Auth. A tabela `profiles` guarda o nome, o
+telefone e o caminho privado da foto; e-mails e senhas ficam sob responsabilidade do
+Supabase Auth.
 
 ## Conectar um projeto
 
@@ -89,6 +90,21 @@ webhook confirmar um pagamento aprovado em BRL, os registros de `order_items` s�
 gravados. O cliente autenticado pode consultar apenas os próprios pedidos e itens; a
 chave secreta e a confirmação de pagamento permanecem no servidor. A tela atualiza o
 status do Pix automaticamente e mostra os produtos pagos na seção **Pedidos**.
+
+Na área administrativa **Conferir pedidos Pix**, é possível excluir permanentemente
+qualquer pedido de Pix manual, inclusive pedidos pagos, após confirmação. A exclusão
+remove também os itens, mensagens e avaliações vinculados; use-a com cuidado, pois não
+há recuperação. Essa ação exige a migration
+`20261116140000_add_admin_order_deletion.sql`.
+
+Administradoras também podem limpar todos os pedidos pela ação ao lado de **Pedidos**
+na navegação. Isso remove pedidos de todos os provedores de pagamento, inclusive
+pagamentos confirmados, e os itens, avaliações e mensagens dependentes; o resumo de
+vendas passa a zero. A ação ao lado de **Notificações** apaga avisos da loja e mensagens
+ligadas a pedidos, sem remover os pedidos. Ambas exigem as migrations
+`20261116150000_add_admin_cleanup_actions.sql` e
+`20261116151000_fix_admin_cleanup_delete_guard.sql`, além de confirmação explícita na
+interface.
 
 ## Retomada da configuração da loja
 
@@ -210,6 +226,83 @@ banco e conferida pela loja. Pedidos cancelados antes da confirmação do pagame
 recebem um valor de devolução registrado. Cancelar um pedido pago não repõe estoque
 automaticamente; ajuste o estoque pelo menu **Estoque** depois de conferir os produtos
 fisicamente.
+
+## Navegação pública, avaliações e gestão da loja
+
+A loja permite navegar pelo catálogo, abrir os detalhes do produto e montar a sacola sem
+entrar em uma conta. A sacola fica salva no navegador. Login ou cadastro é solicitado
+somente ao iniciar a finalização da compra; a sacola é preservada durante a autenticação.
+Cada produto tem uma URL compartilhável no formato `#produto/ID`, e a sacola usa `#sacola`.
+Na página do produto, **Comprar agora** adiciona a quantidade e a variação selecionadas à
+sacola existente e inicia o checkout com todos os itens; se o cliente ainda não entrou,
+a sacola permanece salva durante o login/cadastro. **Adicionar à sacola** continua
+disponível como ação separada. A página também apresenta produtos relacionados em
+**Confira também**, após as avaliações.
+Produtos com variações mostram a escolha de cor/tipo somente depois que a pessoa toca em
+**Comprar agora** ou **Adicionar à sacola**. O seletor lista apenas cores configuradas e
+com estoque; valores antigos sem variação, como `Padrão`, são normalizados na sacola salva.
+
+A migration `20261116110000_add_storefront_reviews_and_settings.sql` habilita:
+
+- **Avaliações verificadas:** somente a conta dona de um pedido pago contendo o produto
+  pode enviar uma nota e comentário. Novas avaliações ficam pendentes e só aparecem
+  publicamente depois que a administradora as aprovar em **Avaliações**. A mesma compra
+  não pode ser avaliada mais de uma vez.
+- **Resumo de vendas:** o painel mostra pedidos pagos, valor recebido, pedidos pendentes
+  e cancelados e os produtos mais vendidos nos últimos 30 dias. A consulta é uma função
+  protegida no banco e só pode ser chamada por uma administradora.
+- **Atendimento:** a área administrativa agrupa clientes pelos pedidos Pix e mostra o
+  histórico de mensagens enviadas pelo site; há também um atalho para conversar pelo
+  WhatsApp.
+- **Dados da loja:** uma administradora pode atualizar o nome, WhatsApp, e-mail e mensagem
+  de suporte. Esses dados são públicos e aparecem na página **Suporte**.
+
+A migration `20261116130000_add_store_notifications.sql` adiciona notificações da loja:
+
+- Visitantes e clientes podem ver avisos públicos; a administradora também pode enviar
+  uma notificação para uma conta específica pelo menu **Atendimento**.
+- No computador, um aviso compacto aparece próximo ao canto inferior direito. No celular,
+  um botão pequeno abre a lista de notificações.
+- Um gatilho no banco publica automaticamente uma oferta quando o preço de um produto
+  ativo é reduzido em `public.products`. Os preços dos produtos são carregados do Supabase
+  para que a notificação e a página do produto mostrem o novo valor.
+- Avisos manuais podem incluir um link para um produto. Avisos públicos e mensagens
+  pessoais expiram após 30 dias; mensagens direcionadas só ficam disponíveis para a conta
+  selecionada depois que ela entrar.
+
+Para habilitar as notificações em um projeto Supabase já vinculado, aplique a migration e
+publique o frontend atualizado:
+
+```powershell
+npx --yes supabase db push
+```
+
+Depois, publique os arquivos do site normalmente. O painel novo depende de a conta já
+estar cadastrada em `public.store_admins`; a chave pública do Supabase não concede
+permissão administrativa por si só.
+
+### Presença de clientes e fotos privadas
+
+A migration `20261116160000_add_store_presence_and_private_profile_photos.sql` adiciona
+presença para clientes autenticados e um bucket privado `profile-photos`. A conta cliente
+pode enviar e consultar apenas a própria foto; a equipe da loja pode gerar URLs assinadas
+para exibir as fotos no painel. Nenhuma foto é pública. Fotos aceitas: JPG, PNG e WEBP,
+com até 5 MB.
+
+Enquanto a pessoa estiver autenticada e com a página da loja visível, a loja registra a
+última atividade a cada 30 segundos. Em **Atendimento**, uma presença dos últimos dois
+minutos aparece como online; as demais mostram há quanto tempo estiveram ativas.
+Somente administradoras podem consultar essa lista. O botão **Enviar aviso** seleciona
+aquele perfil no formulário de notificação direta. O painel mostra até 500 perfis.
+
+Antes de publicar a nova versão do frontend, aplique a migration:
+
+```powershell
+npx --yes supabase db push
+```
+
+Depois, publique os arquivos atualizados do site. Perfis antigos continuam sem foto até
+que seus donos escolham e salvem uma imagem na tela **Meu perfil**.
 
 Ao retomar, o catálogo, os secrets e as funções já estão no Supabase remoto. Faça
 login na loja, gere um Pix de teste, conclua o pagamento pela conta compradora de teste

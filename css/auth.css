@@ -60,6 +60,8 @@
 .button-wide { width: 100%; margin-top: 2px; }
 .auth-forgot-password { display: block; margin: 0 0 14px auto; padding: 0; border: 0; background: transparent; color: var(--green); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
 .auth-forgot-password:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.auth-back-store { display: block; margin: 20px auto 0; padding: 4px 8px; border: 0; background: transparent; color: var(--green); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+.auth-back-store:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 .form-error { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; background: #fff0ed; color: #a64237; font-size: 12px; }
 .form-success { margin: 0 0 14px; padding: 10px 12px; border: 1px solid #d4e2d0; border-radius: 8px; background: #f1f6ee; color: #426244; font-size: 12px; line-height: 1.5; }
 .auth-loading { margin: 0; color: #526353; font-size: 14px; }
