@@ -139,6 +139,11 @@
 :root[data-theme="dark"] .product-variant-option { border-color: var(--line); background: var(--night-raised); color: var(--night-text); }
 :root[data-theme="dark"] .product-variant-option.is-selected { border-color: #a9c7a4; background: #34483a; color: #e0ebdc; }
 :root[data-theme="dark"] .checkout-summary-variant { color: var(--night-muted); }
+:root[data-theme="dark"] .checkout-summary-heading > span { background: var(--night-raised); color: var(--night-text); }
+:root[data-theme="dark"] .product-fulfillment { border-color: var(--line); background: var(--night-raised); }
+:root[data-theme="dark"] .product-fulfillment > span { background: var(--night-soft); color: var(--night-text); }
+:root[data-theme="dark"] .product-fulfillment strong { color: var(--night-text); }
+:root[data-theme="dark"] .product-fulfillment small { color: var(--night-muted); }
 :root[data-theme="dark"] input,
 :root[data-theme="dark"] .field > span,
 :root[data-theme="dark"] .checkout-summary-item,

@@ -2,7 +2,7 @@
 .checkout-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
 .checkout-heading h1 { margin: 0; color: #294535; font: 800 29px/1.15 var(--serif); }
 .checkout-heading .eyebrow { margin-bottom: 5px; }
-.checkout-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 0 0 24px; padding: 0; list-style: none; }
+.checkout-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 0 0 24px; padding: 0; list-style: none; }
 .checkout-step { display: grid; justify-items: center; gap: 7px; min-width: 0; color: #8a9084; text-align: center; }
 .checkout-step > span { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid #deded3; border-radius: 50%; background: var(--paper); color: #7d857a; font-size: 12px; font-weight: 700; }
 .checkout-step small { overflow-wrap: anywhere; font-size: 10px; }
@@ -12,7 +12,9 @@
 .checkout-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; align-items: start; gap: 22px; }
 .checkout-main, .checkout-summary { min-width: 0; padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); }
 .checkout-summary { position: sticky; top: 84px; }
-.checkout-summary h2 { margin: 0 0 16px; color: #294535; font: 800 18px var(--serif); }
+.checkout-summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+.checkout-summary h2 { margin: 0; color: #294535; font: 800 18px var(--serif); }
+.checkout-summary-heading > span { flex: none; padding: 5px 9px; border-radius: 99px; background: #e8eee5; color: #526353; font-size: 10px; font-weight: 700; }
 .checkout-summary-items { margin-bottom: 16px; border-top: 1px solid #eeece4; }
 .checkout-summary-item { display: flex; justify-content: space-between; gap: 10px; padding: 12px 0; border-bottom: 1px solid #eeece4; color: #667065; font-size: 11px; }
 .checkout-summary-item > span { display: grid; gap: 4px; }

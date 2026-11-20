@@ -3,6 +3,7 @@
 
   function renderProductDetail(product, available, quantity, selectedVariants, variantStocks, reviewsMarkup, recommendations) {
     const images = (product.images || []).slice(0, 3);
+    const heroImageIndex = images.findIndex(Boolean);
     const options = window.getKahLimaProductOptions(product);
     const variants = selectedVariants || {};
     const hasColorOptions = options.color.length > 0;
@@ -26,7 +27,6 @@
       <section class="product-detail-page" aria-labelledby="product-detail-title">
         <div class="product-detail-page-heading">
           <button type="button" class="product-detail-back" data-close-product>← Voltar à loja</button>
-          <p class="eyebrow eyebrow-muted">Produto · ${escapeHtml(product.id)}</p>
         </div>
         <section class="product-detail-layout" data-product-detail-id="${escapeHtml(product.id)}">
           <div class="product-detail-gallery">
@@ -34,7 +34,7 @@
               ${images.map((image, index) => `
                 <div class="product-gallery-slide art-${escapeHtml(product.color)}${image ? '' : ' image-unavailable'}" data-gallery-slide>
                   <div class="product-gallery-fallback" aria-hidden="true"><span class="product-object object-${escapeHtml(product.shape)}"><span></span></span><small>${index + 1} / 3</small></div>
-                  ${image ? `<button type="button" class="product-gallery-zoom" data-zoom-image="${escapeHtml(image)}" data-zoom-alt="${escapeHtml(product.name)} · imagem ${index + 1} de 3" aria-label="Ampliar imagem ${index + 1} de ${escapeHtml(product.name)}"><img src="${escapeHtml(image)}" alt="" loading="lazy" decoding="async" draggable="false"><span class="zoom-image-hint" aria-hidden="true">Ampliar imagem ⤢</span></button>` : ''}
+                  ${image ? `<button type="button" class="product-gallery-zoom" data-zoom-image="${escapeHtml(image)}" data-zoom-alt="${escapeHtml(product.name)} · imagem ${index + 1} de 3" aria-label="Ampliar imagem ${index + 1} de ${escapeHtml(product.name)}"><img src="${escapeHtml(image)}" alt="" loading="${index === heroImageIndex ? 'eager' : 'lazy'}" ${index === heroImageIndex ? 'fetchpriority="high"' : ''} decoding="async" draggable="false"><span class="zoom-image-hint" aria-hidden="true">Ampliar imagem ⤢</span></button>` : ''}
                 </div>
               `).join('')}
             </div>
@@ -53,6 +53,10 @@
               <span class="product-price-highlight">Seleção KahLima</span>
             </div>
             <p class="product-detail-stock${available ? '' : ' out-of-stock'}">${available ? `${available} ${available === 1 ? 'unidade disponível' : 'unidades disponíveis'}` : 'Sem estoque'}</p>
+            <div class="product-fulfillment">
+              <span aria-hidden="true">⌂</span>
+              <p><strong>Como receber</strong><small>Entrega local em até 2 km ou retirada em estação da Linha 12–Safira.</small></p>
+            </div>
             <div class="product-detail-actions">
               <div class="quantity-control" aria-label="Quantidade de ${escapeHtml(product.name)}">
                 <button type="button" data-detail-quantity="-1" aria-label="Diminuir quantidade" ${quantity <= 1 ? 'disabled' : ''}>−</button>
